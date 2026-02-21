@@ -14,7 +14,7 @@ import { FeatureRow } from './FeatureRow'
 import { EpicRow } from './EpicRow'
 import { CardModal } from '../Modal/CardModal'
 import { ReleaseManager } from '../Modal/ReleaseManager'
-import type { CardType, Feature, Epic, Story } from '../../types'
+import type { CardType, Epic, Story } from '../../types'
 
 interface ModalState {
   id: string
