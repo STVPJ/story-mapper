@@ -118,6 +118,7 @@ export function CardModal({
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               onBlur={() => save('title', title)}
+              maxLength={200}
               className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
               placeholder="Enter title..."
             />
@@ -130,6 +131,7 @@ export function CardModal({
               onChange={(e) => setDescription(e.target.value)}
               onBlur={() => save('description', description)}
               rows={3}
+              maxLength={5000}
               className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-y"
               placeholder="Describe this item..."
             />
@@ -144,6 +146,7 @@ export function CardModal({
               onChange={(e) => setAC(e.target.value)}
               onBlur={() => save('acceptance_criteria', ac)}
               rows={3}
+              maxLength={5000}
               className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-y"
               placeholder="Define acceptance criteria..."
             />

@@ -75,6 +75,7 @@ function SortableReleaseItem({
           value={release.name}
           onChange={(e) => updateRelease(release.id, { name: e.target.value })}
           onBlur={(e) => updateRelease(release.id, { name: e.target.value })}
+          maxLength={200}
           className="flex-1 px-2 py-1 text-sm text-gray-200 bg-transparent border border-transparent hover:border-gray-600 focus:border-gray-500 rounded focus:outline-none"
         />
         <button

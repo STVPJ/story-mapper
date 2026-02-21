@@ -55,7 +55,8 @@ interface StoryMapStore {
 
 async function getUserId(): Promise<string> {
   const { data } = await supabase.auth.getUser()
-  return data.user!.id
+  if (!data.user) throw new Error('Not authenticated')
+  return data.user.id
 }
 
 function debouncedReorder(table: string, items: { id: string; order: number }[]) {

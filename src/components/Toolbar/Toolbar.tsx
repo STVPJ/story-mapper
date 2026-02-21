@@ -48,9 +48,30 @@ export function Toolbar({ onManageReleases, zoom, onZoomIn, onZoomOut, onFitToSc
       const text = await file.text()
       const imported = JSON.parse(text)
 
-      if (!imported.name || !Array.isArray(imported.features)) {
+      if (!imported.name || typeof imported.name !== 'string' || !Array.isArray(imported.features)) {
         setError('Invalid story map file format')
         return
+      }
+
+      // Validate size limits
+      const maxFeatures = 100
+      const maxEpicsPerFeature = 50
+      const maxStoriesPerEpic = 200
+      if (imported.features.length > maxFeatures) {
+        setError(`Import exceeds maximum of ${maxFeatures} features`)
+        return
+      }
+      for (const f of imported.features) {
+        if (Array.isArray(f.epics) && f.epics.length > maxEpicsPerFeature) {
+          setError(`Import exceeds maximum of ${maxEpicsPerFeature} epics per feature`)
+          return
+        }
+        for (const e of f.epics || []) {
+          if (Array.isArray(e.stories) && e.stories.length > maxStoriesPerEpic) {
+            setError(`Import exceeds maximum of ${maxStoriesPerEpic} stories per epic`)
+            return
+          }
+        }
       }
 
       const { data: userData } = await supabase.auth.getUser()
@@ -160,6 +181,7 @@ export function Toolbar({ onManageReleases, zoom, onZoomIn, onZoomOut, onFitToSc
               setEditingName(false)
             }
           }}
+          maxLength={200}
           className="text-lg font-semibold text-gray-100 bg-transparent border-b-2 border-indigo-500 outline-none px-1"
         />
       ) : (
