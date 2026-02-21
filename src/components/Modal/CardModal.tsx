@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { X, Trash2 } from 'lucide-react'
 import { useStoryMapStore } from '../../store/useStoryMapStore'
 import { Button } from '../shared/Button'
@@ -43,13 +43,30 @@ export function CardModal({
   const modalRef = useRef<HTMLDivElement>(null)
   const titleRef = useRef<HTMLInputElement>(null)
 
+  const saveAll = useCallback(() => {
+    const data: Record<string, string | null> = { title, description, acceptance_criteria: ac }
+    if (type === 'story') data.release_id = selectedRelease
+    if (type === 'feature') updateFeature(id, data)
+    else if (type === 'epic') updateEpic(id, data)
+    else updateStory(id, data)
+  }, [title, description, ac, selectedRelease, type, id, updateFeature, updateEpic, updateStory])
+
+  const handleSaveAndClose = useCallback(() => {
+    saveAll()
+    onClose()
+  }, [saveAll, onClose])
+
   useEffect(() => {
     titleRef.current?.focus()
   }, [])
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose()
+      if (e.key === 'Escape') handleSaveAndClose()
+      if (e.key === 'Enter' && !(e.target instanceof HTMLTextAreaElement)) {
+        e.preventDefault()
+        handleSaveAndClose()
+      }
       if (e.key === 'Tab' && modalRef.current) {
         const focusable = modalRef.current.querySelectorAll<HTMLElement>(
           'input, textarea, select, button, [tabindex]:not([tabindex="-1"])'
@@ -67,19 +84,11 @@ export function CardModal({
     }
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [onClose])
-
-  const save = (field: string, value: string) => {
-    const data = { [field]: value }
-    if (type === 'feature') updateFeature(id, data)
-    else if (type === 'epic') updateEpic(id, data)
-    else updateStory(id, data)
-  }
+  }, [handleSaveAndClose])
 
   const handleReleaseChange = (releaseId: string) => {
     const val = releaseId === '' ? null : releaseId
     setSelectedRelease(val)
-    updateStory(id, { release_id: val })
   }
 
   const handleDelete = () => {
@@ -92,7 +101,7 @@ export function CardModal({
   return (
     <div
       className="fixed inset-0 z-40 flex items-center justify-center bg-black/40"
-      onClick={onClose}
+      onClick={handleSaveAndClose}
     >
       <div
         ref={modalRef}
@@ -104,7 +113,7 @@ export function CardModal({
           <span className={`text-xs font-semibold px-2.5 py-1 rounded-full capitalize ${badgeStyles[type]}`}>
             {type}
           </span>
-          <button onClick={onClose} className="p-1 hover:bg-gray-700 rounded-lg transition-colors">
+          <button onClick={handleSaveAndClose} className="p-1 hover:bg-gray-700 rounded-lg transition-colors">
             <X size={18} className="text-gray-500" />
           </button>
         </div>
@@ -117,7 +126,6 @@ export function CardModal({
               ref={titleRef}
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              onBlur={() => save('title', title)}
               maxLength={200}
               className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
               placeholder="Enter title..."
@@ -129,7 +137,6 @@ export function CardModal({
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              onBlur={() => save('description', description)}
               rows={3}
               maxLength={5000}
               className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-y"
@@ -144,7 +151,6 @@ export function CardModal({
             <textarea
               value={ac}
               onChange={(e) => setAC(e.target.value)}
-              onBlur={() => save('acceptance_criteria', ac)}
               rows={3}
               maxLength={5000}
               className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-y"
@@ -172,24 +178,29 @@ export function CardModal({
         </div>
 
         {/* Footer */}
-        <div className="border-t border-gray-700 px-6 py-4 flex justify-end">
-          {confirmDelete ? (
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-gray-400">
-                Are you sure? This will delete all child items.
-              </span>
-              <Button variant="danger" size="sm" onClick={handleDelete}>
-                Delete
+        <div className="border-t border-gray-700 px-6 py-4 flex justify-between">
+          <div>
+            {confirmDelete ? (
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-400">
+                  Are you sure? This will delete all child items.
+                </span>
+                <Button variant="danger" size="sm" onClick={handleDelete}>
+                  Delete
+                </Button>
+                <Button size="sm" onClick={() => setConfirmDelete(false)}>
+                  Cancel
+                </Button>
+              </div>
+            ) : (
+              <Button variant="ghost" size="sm" onClick={() => setConfirmDelete(true)}>
+                <Trash2 size={14} /> Delete
               </Button>
-              <Button size="sm" onClick={() => setConfirmDelete(false)}>
-                Cancel
-              </Button>
-            </div>
-          ) : (
-            <Button variant="ghost" size="sm" onClick={() => setConfirmDelete(true)}>
-              <Trash2 size={14} /> Delete
-            </Button>
-          )}
+            )}
+          </div>
+          <Button variant="primary" size="sm" onClick={handleSaveAndClose}>
+            Save
+          </Button>
         </div>
       </div>
     </div>
