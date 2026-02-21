@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from 'react'
 import { useStoryMapStore } from '../../store/useStoryMapStore'
 import { Button } from '../shared/Button'
 import { Plus, MoreHorizontal, Copy, Trash2, Pencil } from 'lucide-react'
+import { UserMenu } from '../Auth/UserMenu'
 
 interface MapMenuProps {
   mapId: string
@@ -117,11 +118,14 @@ export function HomeScreen() {
       <div className="max-w-3xl mx-auto px-6 py-12">
         <div className="flex items-center justify-between mb-8">
           <h1 className="text-2xl font-bold text-gray-100">Your Story Maps</h1>
-          {storyMaps.length > 0 && (
-            <Button variant="primary" onClick={() => setShowNameDialog(true)}>
-              <Plus size={16} /> New Map
-            </Button>
-          )}
+          <div className="flex items-center gap-3">
+            {storyMaps.length > 0 && (
+              <Button variant="primary" onClick={() => setShowNameDialog(true)}>
+                <Plus size={16} /> New Map
+              </Button>
+            )}
+            <UserMenu />
+          </div>
         </div>
 
         {storyMaps.length === 0 ? (
