@@ -23,14 +23,14 @@ function MapMenu({ mapId, onClose }: MapMenuProps) {
   }, [onClose])
 
   return (
-    <div ref={ref} className="absolute right-0 top-8 w-44 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-10">
+    <div ref={ref} className="absolute right-0 top-8 w-44 bg-gray-800 rounded-lg shadow-lg border border-gray-700 py-1 z-10">
       <button
         onClick={() => {
           const name = prompt('Rename map:', map?.name)
           if (name) updateStoryMapName(mapId, name)
           onClose()
         }}
-        className="flex items-center gap-2 w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+        className="flex items-center gap-2 w-full px-4 py-2 text-sm text-gray-300 hover:bg-gray-700"
       >
         <Pencil size={14} /> Rename
       </button>
@@ -39,7 +39,7 @@ function MapMenu({ mapId, onClose }: MapMenuProps) {
           duplicateStoryMap(mapId)
           onClose()
         }}
-        className="flex items-center gap-2 w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+        className="flex items-center gap-2 w-full px-4 py-2 text-sm text-gray-300 hover:bg-gray-700"
       >
         <Copy size={14} /> Duplicate
       </button>
@@ -50,7 +50,7 @@ function MapMenu({ mapId, onClose }: MapMenuProps) {
           }
           onClose()
         }}
-        className="flex items-center gap-2 w-full px-4 py-2 text-sm text-red-600 hover:bg-red-50"
+        className="flex items-center gap-2 w-full px-4 py-2 text-sm text-red-400 hover:bg-red-900/30"
       >
         <Trash2 size={14} /> Delete
       </button>
@@ -61,38 +61,73 @@ function MapMenu({ mapId, onClose }: MapMenuProps) {
 export function HomeScreen() {
   const { storyMaps, loading, fetchStoryMaps, createStoryMap, setCurrentMap } = useStoryMapStore()
   const [menuOpen, setMenuOpen] = useState<string | null>(null)
+  const [showNameDialog, setShowNameDialog] = useState(false)
+  const [newMapName, setNewMapName] = useState('')
 
   useEffect(() => {
     fetchStoryMaps()
   }, [fetchStoryMaps])
 
   const handleCreate = async () => {
-    const id = await createStoryMap()
+    const name = newMapName.trim() || 'Untitled Map'
+    setShowNameDialog(false)
+    setNewMapName('')
+    const id = await createStoryMap(name)
     if (id) setCurrentMap(id)
   }
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="animate-pulse text-gray-400">Loading...</div>
+      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+        <div className="animate-pulse text-gray-500">Loading...</div>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-900">
+      {/* Name dialog */}
+      {showNameDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-gray-800 rounded-xl shadow-xl p-6 w-full max-w-sm mx-4">
+            <h2 className="text-lg font-semibold text-gray-100 mb-4">New Story Map</h2>
+            <input
+              autoFocus
+              value={newMapName}
+              onChange={(e) => setNewMapName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleCreate() }}
+              placeholder="Map name"
+              className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+            />
+            <div className="flex justify-end gap-2 mt-4">
+              <button
+                onClick={() => { setShowNameDialog(false); setNewMapName('') }}
+                className="px-4 py-2 text-sm text-gray-400 hover:bg-gray-700 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <Button variant="primary" onClick={handleCreate}>
+                Create
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="max-w-3xl mx-auto px-6 py-12">
         <div className="flex items-center justify-between mb-8">
-          <h1 className="text-2xl font-bold text-gray-900">Your Story Maps</h1>
-          <Button variant="primary" onClick={handleCreate}>
-            <Plus size={16} /> New Map
-          </Button>
+          <h1 className="text-2xl font-bold text-gray-100">Your Story Maps</h1>
+          {storyMaps.length > 0 && (
+            <Button variant="primary" onClick={() => setShowNameDialog(true)}>
+              <Plus size={16} /> New Map
+            </Button>
+          )}
         </div>
 
         {storyMaps.length === 0 ? (
           <div className="text-center py-16">
             <p className="text-gray-500 mb-4">Create your first story map to get started</p>
-            <Button variant="primary" onClick={handleCreate}>
+            <Button variant="primary" onClick={() => setShowNameDialog(true)}>
               <Plus size={16} /> Create Story Map
             </Button>
           </div>
@@ -101,21 +136,21 @@ export function HomeScreen() {
             {storyMaps.map((map) => (
               <div
                 key={map.id}
-                className="flex items-center justify-between bg-white rounded-lg border border-gray-200 px-5 py-4 hover:border-gray-300 transition-colors cursor-pointer group"
+                className="flex items-center justify-between bg-gray-800 rounded-lg border border-gray-700 px-5 py-4 hover:border-gray-600 transition-colors cursor-pointer group"
                 onClick={() => setCurrentMap(map.id)}
               >
                 <div>
-                  <h3 className="font-medium text-gray-900">{map.name}</h3>
-                  <p className="text-sm text-gray-400 mt-0.5">
+                  <h3 className="font-medium text-gray-100">{map.name}</h3>
+                  <p className="text-sm text-gray-500 mt-0.5">
                     Last modified {new Date(map.updated_at).toLocaleDateString()}
                   </p>
                 </div>
                 <div className="relative" onClick={(e) => e.stopPropagation()}>
                   <button
                     onClick={() => setMenuOpen(menuOpen === map.id ? null : map.id)}
-                    className="p-1.5 rounded-lg hover:bg-gray-100 opacity-0 group-hover:opacity-100 transition-opacity"
+                    className="p-1.5 rounded-lg hover:bg-gray-700 opacity-0 group-hover:opacity-100 transition-opacity"
                   >
-                    <MoreHorizontal size={18} className="text-gray-400" />
+                    <MoreHorizontal size={18} className="text-gray-500" />
                   </button>
                   {menuOpen === map.id && (
                     <MapMenu mapId={map.id} onClose={() => setMenuOpen(null)} />

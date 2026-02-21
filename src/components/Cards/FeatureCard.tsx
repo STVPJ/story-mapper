@@ -15,16 +15,14 @@ export function FeatureCard({ feature, onClick }: FeatureCardProps) {
   })
 
   const style = {
-    transform: CSS.Transform.toString(transform),
+    transform: isDragging ? undefined : CSS.Transform.toString(transform),
     transition,
   }
-
-  const colSpan = Math.max(feature.epics.length, 1)
 
   return (
     <div
       ref={setNodeRef}
-      style={{ ...style, gridColumn: `span ${colSpan}` }}
+      style={style}
       className={`group relative bg-[#312E81] text-white rounded-lg px-4 py-3 cursor-pointer transition-all hover:shadow-lg hover:scale-[1.02] ${
         isDragging ? 'opacity-50 shadow-xl' : ''
       }`}

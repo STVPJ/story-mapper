@@ -1,20 +1,25 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import {
   DndContext,
-  closestCenter,
+  DragOverlay,
   PointerSensor,
   useSensor,
   useSensors,
+  type DragStartEvent,
   type DragEndEvent,
 } from '@dnd-kit/core'
-import { arrayMove } from '@dnd-kit/sortable'
+import { SortableContext, horizontalListSortingStrategy, arrayMove } from '@dnd-kit/sortable'
 import { useStoryMapStore } from '../../store/useStoryMapStore'
+import { multiContainerCollisionDetection } from '../../utils/dnd'
 import { Toolbar } from '../Toolbar/Toolbar'
-import { FeatureRow } from './FeatureRow'
+import { FeatureCard } from '../Cards/FeatureCard'
 import { EpicRow } from './EpicRow'
+import { StoryCell } from './StoryCell'
+import { ReleaseDivider } from './ReleaseDivider'
 import { CardModal } from '../Modal/CardModal'
 import { ReleaseManager } from '../Modal/ReleaseManager'
-import type { CardType, Epic, Story } from '../../types'
+import { Plus } from 'lucide-react'
+import type { CardType, Feature, Epic, Story, Release } from '../../types'
 
 interface ModalState {
   id: string
@@ -25,6 +30,11 @@ interface ModalState {
   release_id?: string | null
 }
 
+interface ActiveDrag {
+  type: CardType
+  item: Feature | Epic | Story
+}
+
 export function Board() {
   const store = useStoryMapStore()
   const map = store.getCurrentMap()
@@ -32,10 +42,22 @@ export function Board() {
   const [modal, setModal] = useState<ModalState | null>(null)
   const [showReleases, setShowReleases] = useState(false)
   const [zoom, setZoom] = useState(1)
+  const [activeDrag, setActiveDrag] = useState<ActiveDrag | null>(null)
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
   )
+
+  // Build release groups: each release + unassigned
+  const releaseGroups = useMemo(() => {
+    if (!map) return []
+    const groups: { release: Release | null; label: string; releaseId: string | null }[] = []
+    for (const r of map.releases) {
+      groups.push({ release: r, label: r.name, releaseId: r.id })
+    }
+    groups.push({ release: null, label: 'Unassigned', releaseId: null })
+    return groups
+  }, [map])
 
   const handleCardClick = useCallback(
     (id: string, type: CardType) => {
@@ -65,14 +87,22 @@ export function Board() {
     [map]
   )
 
+  const handleDragStart = useCallback((event: DragStartEvent) => {
+    const data = event.active.data.current as { type: CardType; item: Feature | Epic | Story } | undefined
+    if (data) {
+      setActiveDrag({ type: data.type, item: data.item })
+    }
+  }, [])
+
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {
+      setActiveDrag(null)
       if (!map) return
       const { active, over } = event
       if (!over || active.id === over.id) return
 
       const activeData = active.data.current as { type: string; item: any } | undefined
-      const overData = over.data.current as { type: string; item?: any; epicId?: string } | undefined
+      const overData = over.data.current as { type: string; item?: any; epicId?: string; releaseId?: string | null; featureId?: string } | undefined
       if (!activeData) return
 
       if (activeData.type === 'feature') {
@@ -137,6 +167,21 @@ export function Board() {
               )
             }
           }
+        } else if (overData?.type === 'release-section') {
+          const targetEpicId = overData.epicId!
+          const targetReleaseId = overData.releaseId ?? null
+          if (targetEpicId === activeStory.epic_id) {
+            if (targetReleaseId !== activeStory.release_id) {
+              store.updateStory(activeStory.id, { release_id: targetReleaseId })
+            }
+          } else {
+            store.moveStory(activeStory.id, targetEpicId, targetReleaseId, 0)
+          }
+        } else if (overData?.type === 'epic-promotion') {
+          const targetFeatureId = overData.featureId!
+          const targetFeature = map.features.find((f) => f.id === targetFeatureId)
+          const epicCount = targetFeature ? targetFeature.epics.length : 0
+          store.promoteStoryToEpic(activeStory.id, targetFeatureId, epicCount)
         } else if (overData?.type === 'story-column') {
           const targetEpicId = overData.epicId!
           if (targetEpicId !== activeStory.epic_id) {
@@ -172,8 +217,12 @@ export function Board() {
 
   if (!map) return null
 
+  const activeDragType = activeDrag?.type ?? null
+  const isStoryDragging = activeDragType === 'story'
+  const hasReleases = map.releases.length > 0
+
   return (
-    <div className="flex flex-col h-screen bg-gray-50">
+    <div className="flex flex-col h-screen bg-gray-900">
       <Toolbar
         onManageReleases={() => setShowReleases(true)}
         zoom={zoom}
@@ -185,37 +234,144 @@ export function Board() {
       <div className="flex-1 overflow-auto p-6">
         <div
           style={{ transform: `scale(${zoom})`, transformOrigin: 'top left' }}
-          className="space-y-4 inline-block"
+          className="inline-block"
         >
           <DndContext
             sensors={sensors}
-            collisionDetection={closestCenter}
+            collisionDetection={multiContainerCollisionDetection}
+            onDragStart={handleDragStart}
             onDragEnd={handleDragEnd}
           >
-            {/* Feature Row */}
-            <FeatureRow
-              features={map.features}
-              onCardClick={handleCardClick}
-              onAddFeature={handleAddFeature}
-            />
+            {/* ── Feature + Epic header ── */}
+            <div className="flex gap-4 items-start">
+              <SortableContext
+                items={map.features.map((f) => f.id)}
+                strategy={horizontalListSortingStrategy}
+              >
+                {map.features.map((feature) => (
+                  <div key={feature.id} className="flex flex-col gap-2 min-w-[236px]">
+                    <FeatureCard
+                      feature={feature}
+                      onClick={() => handleCardClick(feature.id, 'feature')}
+                    />
+                    <EpicRow
+                      feature={feature}
+                      onCardClick={handleCardClick}
+                      onAddEpic={handleAddEpic}
+                      activeDragType={activeDragType}
+                    />
+                  </div>
+                ))}
+              </SortableContext>
 
-            {/* Epic Rows + Story Columns per Feature */}
-            <div className="flex gap-3">
-              {map.features.map((feature) => (
-                <EpicRow
-                  key={feature.id}
-                  feature={feature}
-                  releases={map.releases}
-                  onCardClick={handleCardClick}
-                  onAddEpic={handleAddEpic}
-                  onAddStory={handleAddStory}
-                />
-              ))}
+              <button
+                onClick={handleAddFeature}
+                className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-300 px-4 py-3 hover:bg-gray-800 rounded-lg transition-colors whitespace-nowrap border-2 border-dashed border-gray-700 hover:border-gray-600"
+              >
+                <Plus size={14} /> Add Feature
+              </button>
             </div>
+
+            {/* ── Release swim lanes ── */}
+            {hasReleases ? (
+              <div className="mt-4 space-y-1">
+                {releaseGroups.map((group) => (
+                  <div key={group.releaseId ?? 'unassigned'}>
+                    <ReleaseDivider release={group.release} label={group.label} />
+                    <div className="flex gap-4 items-start">
+                      {map.features.map((feature) => (
+                        <div
+                          key={feature.id}
+                          className="flex gap-3 min-w-[236px]"
+                          style={{ paddingLeft: 8, paddingRight: 8 }}
+                        >
+                          {feature.epics.map((epic) => {
+                            const stories = epic.stories.filter((s) =>
+                              group.releaseId
+                                ? s.release_id === group.releaseId
+                                : !s.release_id || !map.releases.find((r) => r.id === s.release_id)
+                            )
+                            return (
+                              <StoryCell
+                                key={epic.id}
+                                epicId={epic.id}
+                                releaseId={group.releaseId}
+                                stories={stories}
+                                releases={map.releases}
+                                onCardClick={handleCardClick}
+                                onAddStory={handleAddStory}
+                                isStoryDragging={isStoryDragging}
+                              />
+                            )
+                          })}
+                          {feature.epics.length === 0 && (
+                            <div className="w-[220px] min-h-[32px]" />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              /* No releases — show stories directly under epics */
+              <div className="mt-4">
+                <div className="flex gap-4 items-start">
+                  {map.features.map((feature) => (
+                    <div
+                      key={feature.id}
+                      className="flex gap-3 min-w-[236px]"
+                      style={{ paddingLeft: 8, paddingRight: 8 }}
+                    >
+                      {feature.epics.map((epic) => (
+                        <StoryCell
+                          key={epic.id}
+                          epicId={epic.id}
+                          releaseId={null}
+                          stories={epic.stories}
+                          releases={map.releases}
+                          onCardClick={handleCardClick}
+                          onAddStory={handleAddStory}
+                          isStoryDragging={isStoryDragging}
+                        />
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* DragOverlay — ghost card that follows cursor */}
+            <DragOverlay dropAnimation={null}>
+              {activeDrag?.type === 'feature' && (
+                <div className="bg-[#312E81] text-white rounded-lg px-4 py-3 shadow-xl opacity-90 min-w-[220px]">
+                  <h3 className="font-bold text-base truncate">{(activeDrag.item as Feature).title}</h3>
+                </div>
+              )}
+              {activeDrag?.type === 'epic' && (
+                <div className="bg-[#0891B2] text-white rounded-lg px-3 py-2.5 w-[220px] shadow-xl opacity-90">
+                  <h3 className="font-semibold text-sm line-clamp-2">{(activeDrag.item as Epic).title}</h3>
+                </div>
+              )}
+              {activeDrag?.type === 'story' && (() => {
+                const story = activeDrag.item as Story
+                const release = map.releases.find((r) => r.id === story.release_id)
+                const accentColour = release?.colour || '#D1D5DB'
+                return (
+                  <div className="relative bg-gray-800 text-gray-200 rounded-lg px-3 py-2.5 w-[220px] border border-gray-700 shadow-xl opacity-90">
+                    <div
+                      className="absolute left-0 top-0 bottom-0 w-1 rounded-l-lg"
+                      style={{ backgroundColor: accentColour }}
+                    />
+                    <h4 className="text-[13px] font-medium line-clamp-2">{story.title}</h4>
+                  </div>
+                )
+              })()}
+            </DragOverlay>
           </DndContext>
 
           {map.features.length === 0 && (
-            <div className="text-center py-20 text-gray-400">
+            <div className="text-center py-20 text-gray-500">
               <p>Add your first feature to start mapping</p>
             </div>
           )}

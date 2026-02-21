@@ -8,9 +8,9 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 const variants = {
   primary: 'bg-indigo-600 text-white hover:bg-indigo-700',
-  secondary: 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50',
+  secondary: 'bg-gray-700 text-gray-200 border border-gray-600 hover:bg-gray-600',
   danger: 'bg-red-600 text-white hover:bg-red-700',
-  ghost: 'text-gray-600 hover:bg-gray-100',
+  ghost: 'text-gray-300 hover:bg-gray-700',
 }
 
 const sizes = {

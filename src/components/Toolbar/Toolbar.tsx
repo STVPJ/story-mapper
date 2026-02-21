@@ -136,13 +136,13 @@ export function Toolbar({ onManageReleases, zoom, onZoomIn, onZoomOut, onFitToSc
   }
 
   return (
-    <div className="flex items-center gap-3 px-4 py-2 bg-white border-b border-gray-200 shrink-0">
+    <div className="flex items-center gap-3 px-4 py-2 bg-gray-800 border-b border-gray-700 shrink-0">
       <button
         onClick={() => setCurrentMap(null)}
-        className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
+        className="p-1.5 hover:bg-gray-700 rounded-lg transition-colors"
         aria-label="Back to home"
       >
-        <ArrowLeft size={18} className="text-gray-500" />
+        <ArrowLeft size={18} className="text-gray-400" />
       </button>
 
       {editingName ? (
@@ -160,7 +160,7 @@ export function Toolbar({ onManageReleases, zoom, onZoomIn, onZoomOut, onFitToSc
               setEditingName(false)
             }
           }}
-          className="text-lg font-semibold text-gray-900 bg-transparent border-b-2 border-indigo-500 outline-none px-1"
+          className="text-lg font-semibold text-gray-100 bg-transparent border-b-2 border-indigo-500 outline-none px-1"
         />
       ) : (
         <button
@@ -168,7 +168,7 @@ export function Toolbar({ onManageReleases, zoom, onZoomIn, onZoomOut, onFitToSc
             setName(map?.name || '')
             setEditingName(true)
           }}
-          className="text-lg font-semibold text-gray-900 hover:text-indigo-600 transition-colors"
+          className="text-lg font-semibold text-gray-100 hover:text-indigo-400 transition-colors"
         >
           {map?.name}
         </button>
@@ -195,32 +195,32 @@ export function Toolbar({ onManageReleases, zoom, onZoomIn, onZoomOut, onFitToSc
         className="hidden"
       />
 
-      <div className="flex items-center gap-1 border-l border-gray-200 pl-3 ml-1">
+      <div className="flex items-center gap-1 border-l border-gray-700 pl-3 ml-1">
         <button
           onClick={onZoomOut}
-          className="p-1.5 hover:bg-gray-100 rounded-lg"
+          className="p-1.5 hover:bg-gray-700 rounded-lg"
           aria-label="Zoom out"
         >
-          <ZoomOut size={16} className="text-gray-500" />
+          <ZoomOut size={16} className="text-gray-400" />
         </button>
-        <span className="text-xs text-gray-400 w-10 text-center">{Math.round(zoom * 100)}%</span>
+        <span className="text-xs text-gray-500 w-10 text-center">{Math.round(zoom * 100)}%</span>
         <button
           onClick={onZoomIn}
-          className="p-1.5 hover:bg-gray-100 rounded-lg"
+          className="p-1.5 hover:bg-gray-700 rounded-lg"
           aria-label="Zoom in"
         >
-          <ZoomIn size={16} className="text-gray-500" />
+          <ZoomIn size={16} className="text-gray-400" />
         </button>
         <button
           onClick={onFitToScreen}
-          className="p-1.5 hover:bg-gray-100 rounded-lg"
+          className="p-1.5 hover:bg-gray-700 rounded-lg"
           aria-label="Fit to screen"
         >
-          <Maximize size={16} className="text-gray-500" />
+          <Maximize size={16} className="text-gray-400" />
         </button>
       </div>
 
-      <div className="border-l border-gray-200 pl-3 ml-1">
+      <div className="border-l border-gray-700 pl-3 ml-1">
         <UserMenu />
       </div>
     </div>

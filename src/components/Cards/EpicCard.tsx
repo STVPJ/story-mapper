@@ -15,7 +15,7 @@ export function EpicCard({ epic, onClick }: EpicCardProps) {
   })
 
   const style = {
-    transform: CSS.Transform.toString(transform),
+    transform: isDragging ? undefined : CSS.Transform.toString(transform),
     transition,
   }
 

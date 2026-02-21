@@ -13,7 +13,7 @@ export function ColourPicker({ value, onChange }: ColourPickerProps) {
           key={colour}
           onClick={() => onChange(colour)}
           className={`w-7 h-7 rounded-full transition-transform hover:scale-110 ${
-            value === colour ? 'ring-2 ring-offset-2 ring-gray-400 scale-110' : ''
+            value === colour ? 'ring-2 ring-offset-2 ring-offset-gray-800 ring-gray-400 scale-110' : ''
           }`}
           style={{ backgroundColor: colour }}
           aria-label={`Select colour ${colour}`}

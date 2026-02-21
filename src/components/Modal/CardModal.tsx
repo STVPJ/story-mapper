@@ -18,7 +18,7 @@ interface CardModalProps {
 const badgeStyles: Record<CardType, string> = {
   feature: 'bg-[#312E81] text-white',
   epic: 'bg-[#0891B2] text-white',
-  story: 'bg-gray-100 text-gray-700',
+  story: 'bg-gray-700 text-gray-300',
 }
 
 export function CardModal({
@@ -96,7 +96,7 @@ export function CardModal({
     >
       <div
         ref={modalRef}
-        className="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto"
+        className="bg-gray-800 rounded-xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -104,39 +104,39 @@ export function CardModal({
           <span className={`text-xs font-semibold px-2.5 py-1 rounded-full capitalize ${badgeStyles[type]}`}>
             {type}
           </span>
-          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg transition-colors">
-            <X size={18} className="text-gray-400" />
+          <button onClick={onClose} className="p-1 hover:bg-gray-700 rounded-lg transition-colors">
+            <X size={18} className="text-gray-500" />
           </button>
         </div>
 
         {/* Body */}
         <div className="px-6 pb-6 space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
+            <label className="block text-sm font-medium text-gray-300 mb-1">Title</label>
             <input
               ref={titleRef}
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               onBlur={() => save('title', title)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
               placeholder="Enter title..."
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+            <label className="block text-sm font-medium text-gray-300 mb-1">Description</label>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               onBlur={() => save('description', description)}
               rows={3}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-y"
+              className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-y"
               placeholder="Describe this item..."
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-gray-300 mb-1">
               Acceptance Criteria
             </label>
             <textarea
@@ -144,18 +144,18 @@ export function CardModal({
               onChange={(e) => setAC(e.target.value)}
               onBlur={() => save('acceptance_criteria', ac)}
               rows={3}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-y"
+              className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-y"
               placeholder="Define acceptance criteria..."
             />
           </div>
 
           {type === 'story' && releases.length > 0 && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Release</label>
+              <label className="block text-sm font-medium text-gray-300 mb-1">Release</label>
               <select
                 value={selectedRelease || ''}
                 onChange={(e) => handleReleaseChange(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
               >
                 <option value="">Unassigned</option>
                 {releases.map((r) => (
@@ -169,10 +169,10 @@ export function CardModal({
         </div>
 
         {/* Footer */}
-        <div className="border-t border-gray-100 px-6 py-4 flex justify-end">
+        <div className="border-t border-gray-700 px-6 py-4 flex justify-end">
           {confirmDelete ? (
             <div className="flex items-center gap-2">
-              <span className="text-sm text-gray-500">
+              <span className="text-sm text-gray-400">
                 Are you sure? This will delete all child items.
               </span>
               <Button variant="danger" size="sm" onClick={handleDelete}>

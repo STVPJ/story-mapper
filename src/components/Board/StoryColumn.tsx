@@ -5,18 +5,57 @@ import { StoryCard } from '../Cards/StoryCard'
 import { ReleaseDivider } from './ReleaseDivider'
 import type { Epic, Release, Story, CardType } from '../../types'
 
+interface ReleaseSectionProps {
+  epicId: string
+  releaseId: string | null
+  stories: Story[]
+  releases: Release[]
+  onCardClick: (id: string, type: CardType) => void
+  isStoryDragging: boolean
+}
+
+function ReleaseSection({ epicId, releaseId, stories, releases, onCardClick, isStoryDragging }: ReleaseSectionProps) {
+  const droppableId = `release-section-${epicId}-${releaseId ?? 'unassigned'}`
+  const { setNodeRef, isOver } = useDroppable({
+    id: droppableId,
+    data: { type: 'release-section', epicId, releaseId: releaseId ?? null },
+    disabled: !isStoryDragging,
+  })
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={`space-y-1.5 min-h-[8px] rounded-md transition-colors px-1 py-0.5 ${
+        isOver ? 'bg-blue-50 ring-2 ring-blue-300' : ''
+      }`}
+    >
+      {stories.map((story) => (
+        <StoryCard
+          key={story.id}
+          story={story}
+          releases={releases}
+          onClick={() => onCardClick(story.id, 'story')}
+        />
+      ))}
+    </div>
+  )
+}
+
 interface StoryColumnProps {
   epic: Epic
   releases: Release[]
   onCardClick: (id: string, type: CardType) => void
   onAddStory: (epicId: string, releaseId?: string | null) => void
+  activeDragType: CardType | null
 }
 
-export function StoryColumn({ epic, releases, onCardClick, onAddStory }: StoryColumnProps) {
+export function StoryColumn({ epic, releases, onCardClick, onAddStory, activeDragType }: StoryColumnProps) {
   const { setNodeRef } = useDroppable({
     id: `story-column-${epic.id}`,
     data: { type: 'story-column', epicId: epic.id },
   })
+
+  const isStoryDragging = activeDragType === 'story'
 
   // Group stories by release
   const groupedStories: { release: Release | null; label: string; stories: Story[] }[] = []
@@ -44,16 +83,14 @@ export function StoryColumn({ epic, releases, onCardClick, onAddStory }: StoryCo
           ? groupedStories.map((group) => (
               <div key={group.release?.id || 'unassigned'}>
                 <ReleaseDivider release={group.release} label={group.label} />
-                <div className="space-y-1.5 min-h-[8px]">
-                  {group.stories.map((story) => (
-                    <StoryCard
-                      key={story.id}
-                      story={story}
-                      releases={releases}
-                      onClick={() => onCardClick(story.id, 'story')}
-                    />
-                  ))}
-                </div>
+                <ReleaseSection
+                  epicId={epic.id}
+                  releaseId={group.release?.id ?? null}
+                  stories={group.stories}
+                  releases={releases}
+                  onCardClick={onCardClick}
+                  isStoryDragging={isStoryDragging}
+                />
               </div>
             ))
           : epic.stories.map((story) => (
