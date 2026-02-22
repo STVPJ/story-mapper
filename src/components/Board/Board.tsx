@@ -7,6 +7,7 @@ import {
   useSensors,
   type DragStartEvent,
   type DragEndEvent,
+  type DragOverEvent,
 } from '@dnd-kit/core'
 import { SortableContext, horizontalListSortingStrategy, arrayMove } from '@dnd-kit/sortable'
 import { useStoryMapStore } from '../../store/useStoryMapStore'
@@ -43,6 +44,7 @@ export function Board() {
   const [showReleases, setShowReleases] = useState(false)
   const [zoom, setZoom] = useState(1)
   const [activeDrag, setActiveDrag] = useState<ActiveDrag | null>(null)
+  const [overTargetId, setOverTargetId] = useState<string | null>(null)
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
@@ -94,9 +96,14 @@ export function Board() {
     }
   }, [])
 
+  const handleDragOver = useCallback((event: DragOverEvent) => {
+    setOverTargetId(event.over?.id as string ?? null)
+  }, [])
+
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {
       setActiveDrag(null)
+      setOverTargetId(null)
       if (!map) return
       const { active, over } = event
       if (!over || active.id === over.id) return
@@ -231,16 +238,17 @@ export function Board() {
         onFitToScreen={() => setZoom(1)}
       />
 
-      <div className="flex-1 overflow-auto p-6">
-        <div
-          style={{ transform: `scale(${zoom})`, transformOrigin: 'top left' }}
-          className="inline-block"
-        >
-          <DndContext
-            sensors={sensors}
-            collisionDetection={multiContainerCollisionDetection}
-            onDragStart={handleDragStart}
-            onDragEnd={handleDragEnd}
+      <DndContext
+        sensors={sensors}
+        collisionDetection={multiContainerCollisionDetection}
+        onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
+        onDragEnd={handleDragEnd}
+      >
+        <div className="flex-1 overflow-auto p-6">
+          <div
+            style={{ transform: `scale(${zoom})`, transformOrigin: 'top left' }}
+            className="inline-block"
           >
             {/* ── Feature + Epic header ── */}
             <div className="flex gap-4 items-start">
@@ -252,6 +260,8 @@ export function Board() {
                   <div key={feature.id} className="flex flex-col gap-2 min-w-[236px]">
                     <FeatureCard
                       feature={feature}
+                      zoom={zoom}
+                      isDropTarget={activeDragType === 'feature' && overTargetId === feature.id && activeDrag?.item.id !== feature.id}
                       onClick={() => handleCardClick(feature.id, 'feature')}
                     />
                     <EpicRow
@@ -259,6 +269,9 @@ export function Board() {
                       onCardClick={handleCardClick}
                       onAddEpic={handleAddEpic}
                       activeDragType={activeDragType}
+                      zoom={zoom}
+                      overTargetId={overTargetId}
+                      activeDragId={activeDrag?.item.id}
                     />
                   </div>
                 ))}
@@ -301,6 +314,7 @@ export function Board() {
                                 onCardClick={handleCardClick}
                                 onAddStory={handleAddStory}
                                 isStoryDragging={isStoryDragging}
+                                zoom={zoom}
                               />
                             )
                           })}
@@ -333,6 +347,7 @@ export function Board() {
                           onCardClick={handleCardClick}
                           onAddStory={handleAddStory}
                           isStoryDragging={isStoryDragging}
+                          zoom={zoom}
                         />
                       ))}
                     </div>
@@ -341,42 +356,42 @@ export function Board() {
               </div>
             )}
 
-            {/* DragOverlay — ghost card that follows cursor */}
-            <DragOverlay dropAnimation={null}>
-              {activeDrag?.type === 'feature' && (
-                <div className="bg-[#312E81] text-white rounded-lg px-4 py-3 shadow-xl opacity-90 min-w-[220px]">
-                  <h3 className="font-bold text-base truncate">{(activeDrag.item as Feature).title}</h3>
-                </div>
-              )}
-              {activeDrag?.type === 'epic' && (
-                <div className="bg-[#0891B2] text-white rounded-lg px-3 py-2.5 w-[220px] shadow-xl opacity-90">
-                  <h3 className="font-semibold text-sm line-clamp-2">{(activeDrag.item as Epic).title}</h3>
-                </div>
-              )}
-              {activeDrag?.type === 'story' && (() => {
-                const story = activeDrag.item as Story
-                const release = map.releases.find((r) => r.id === story.release_id)
-                const accentColour = release?.colour || '#D1D5DB'
-                return (
-                  <div className="relative bg-gray-800 text-gray-200 rounded-lg px-3 py-2.5 w-[220px] border border-gray-700 shadow-xl opacity-90">
-                    <div
-                      className="absolute left-0 top-0 bottom-0 w-1 rounded-l-lg"
-                      style={{ backgroundColor: accentColour }}
-                    />
-                    <h4 className="text-[13px] font-medium line-clamp-2">{story.title}</h4>
-                  </div>
-                )
-              })()}
-            </DragOverlay>
-          </DndContext>
+            {map.features.length === 0 && (
+              <div className="text-center py-20 text-gray-500">
+                <p>Add your first feature to start mapping</p>
+              </div>
+            )}
+          </div>
+        </div>
 
-          {map.features.length === 0 && (
-            <div className="text-center py-20 text-gray-500">
-              <p>Add your first feature to start mapping</p>
+        {/* DragOverlay — ghost card that follows cursor (outside scaled container) */}
+        <DragOverlay dropAnimation={null}>
+          {activeDrag?.type === 'feature' && (
+            <div className="bg-[#312E81] text-white rounded-lg px-4 py-3 shadow-xl opacity-90 min-w-[220px]">
+              <h3 className="font-bold text-base truncate">{(activeDrag.item as Feature).title}</h3>
             </div>
           )}
-        </div>
-      </div>
+          {activeDrag?.type === 'epic' && (
+            <div className="bg-[#0891B2] text-white rounded-lg px-3 py-2.5 w-[220px] shadow-xl opacity-90">
+              <h3 className="font-semibold text-sm line-clamp-2">{(activeDrag.item as Epic).title}</h3>
+            </div>
+          )}
+          {activeDrag?.type === 'story' && (() => {
+            const story = activeDrag.item as Story
+            const release = map.releases.find((r) => r.id === story.release_id)
+            const accentColour = release?.colour || '#D1D5DB'
+            return (
+              <div className="relative bg-gray-800 text-gray-200 rounded-lg px-3 py-2.5 w-[220px] border border-gray-700 shadow-xl opacity-90">
+                <div
+                  className="absolute left-0 top-0 bottom-0 w-1 rounded-l-lg"
+                  style={{ backgroundColor: accentColour }}
+                />
+                <h4 className="text-[13px] font-medium line-clamp-2">{story.title}</h4>
+              </div>
+            )
+          })()}
+        </DragOverlay>
+      </DndContext>
 
       {modal && (
         <CardModal

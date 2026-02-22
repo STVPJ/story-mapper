@@ -12,6 +12,7 @@ interface StoryCellProps {
   onCardClick: (id: string, type: CardType) => void
   onAddStory: (epicId: string, releaseId?: string | null) => void
   isStoryDragging: boolean
+  zoom?: number
 }
 
 export function StoryCell({
@@ -22,6 +23,7 @@ export function StoryCell({
   onCardClick,
   onAddStory,
   isStoryDragging,
+  zoom = 1,
 }: StoryCellProps) {
   const droppableId = `release-section-${epicId}-${releaseId ?? 'unassigned'}`
   const { setNodeRef, isOver } = useDroppable({
@@ -44,6 +46,7 @@ export function StoryCell({
             key={story.id}
             story={story}
             releases={releases}
+            zoom={zoom}
             onClick={() => onCardClick(story.id, 'story')}
           />
         ))}

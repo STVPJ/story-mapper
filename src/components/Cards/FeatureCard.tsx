@@ -6,16 +6,22 @@ import type { Feature } from '../../types'
 interface FeatureCardProps {
   feature: Feature
   onClick: () => void
+  zoom?: number
+  isDropTarget?: boolean
 }
 
-export function FeatureCard({ feature, onClick }: FeatureCardProps) {
+export function FeatureCard({ feature, onClick, zoom = 1, isDropTarget }: FeatureCardProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: feature.id,
     data: { type: 'feature', item: feature },
   })
 
+  const adjustedTransform = transform
+    ? { ...transform, x: transform.x / zoom, y: transform.y / zoom }
+    : null
+
   const style = {
-    transform: isDragging ? undefined : CSS.Transform.toString(transform),
+    transform: isDragging ? undefined : CSS.Transform.toString(adjustedTransform),
     transition,
   }
 
@@ -25,6 +31,8 @@ export function FeatureCard({ feature, onClick }: FeatureCardProps) {
       style={style}
       className={`group relative bg-[#312E81] text-white rounded-lg px-4 py-3 cursor-pointer transition-all hover:shadow-lg hover:scale-[1.02] ${
         isDragging ? 'opacity-50 shadow-xl' : ''
+      } ${
+        isDropTarget && !isDragging ? 'ring-2 ring-indigo-400 shadow-lg shadow-indigo-500/20' : ''
       }`}
       onClick={onClick}
     >

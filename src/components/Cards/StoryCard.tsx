@@ -7,16 +7,21 @@ interface StoryCardProps {
   story: Story
   releases: Release[]
   onClick: () => void
+  zoom?: number
 }
 
-export function StoryCard({ story, releases, onClick }: StoryCardProps) {
+export function StoryCard({ story, releases, onClick, zoom = 1 }: StoryCardProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: story.id,
     data: { type: 'story', item: story },
   })
 
+  const adjustedTransform = transform
+    ? { ...transform, x: transform.x / zoom, y: transform.y / zoom }
+    : null
+
   const style = {
-    transform: isDragging ? undefined : CSS.Transform.toString(transform),
+    transform: isDragging ? undefined : CSS.Transform.toString(adjustedTransform),
     transition,
   }
 

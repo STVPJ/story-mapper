@@ -226,6 +226,19 @@ describe('FeatureCard', () => {
     const card = screen.getByText('User Authentication').closest('div')!
     expect(card.className).toContain('bg-[#312E81]')
   })
+
+  it('shows drop target highlight when isDropTarget is true', () => {
+    render(<FeatureCard feature={feature} onClick={() => {}} isDropTarget />)
+    const card = screen.getByText('User Authentication').closest('div')!
+    expect(card.className).toContain('ring-2')
+    expect(card.className).toContain('ring-indigo-400')
+  })
+
+  it('does not show drop target highlight by default', () => {
+    render(<FeatureCard feature={feature} onClick={() => {}} />)
+    const card = screen.getByText('User Authentication').closest('div')!
+    expect(card.className).not.toContain('ring-indigo-400')
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -259,6 +272,19 @@ describe('EpicCard', () => {
     render(<EpicCard epic={epic} onClick={() => {}} />)
     const card = screen.getByText('Login Epic').closest('div')!
     expect(card.className).toContain('bg-[#0891B2]')
+  })
+
+  it('shows drop target highlight when isDropTarget is true', () => {
+    render(<EpicCard epic={epic} onClick={() => {}} isDropTarget />)
+    const card = screen.getByText('Login Epic').closest('div')!
+    expect(card.className).toContain('ring-2')
+    expect(card.className).toContain('ring-cyan-300')
+  })
+
+  it('does not show drop target highlight by default', () => {
+    render(<EpicCard epic={epic} onClick={() => {}} />)
+    const card = screen.getByText('Login Epic').closest('div')!
+    expect(card.className).not.toContain('ring-cyan-300')
   })
 })
 

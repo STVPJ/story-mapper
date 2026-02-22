@@ -9,6 +9,9 @@ interface EpicRowProps {
   onCardClick: (id: string, type: CardType) => void
   onAddEpic: (featureId: string) => void
   activeDragType: CardType | null
+  zoom?: number
+  overTargetId?: string | null
+  activeDragId?: string | null
 }
 
 function EpicPromotionZone({ featureId, isStoryDragging }: { featureId: string; isStoryDragging: boolean }) {
@@ -35,7 +38,7 @@ function EpicPromotionZone({ featureId, isStoryDragging }: { featureId: string; 
   )
 }
 
-export function EpicRow({ feature, onCardClick, onAddEpic, activeDragType }: EpicRowProps) {
+export function EpicRow({ feature, onCardClick, onAddEpic, activeDragType, zoom = 1, overTargetId, activeDragId }: EpicRowProps) {
   const epicIds = feature.epics.map((e) => e.id)
 
   return (
@@ -43,7 +46,13 @@ export function EpicRow({ feature, onCardClick, onAddEpic, activeDragType }: Epi
       <div className="flex gap-3">
         <SortableContext items={epicIds} strategy={horizontalListSortingStrategy}>
           {feature.epics.map((epic) => (
-            <EpicCard key={epic.id} epic={epic} onClick={() => onCardClick(epic.id, 'epic')} />
+            <EpicCard
+              key={epic.id}
+              epic={epic}
+              zoom={zoom}
+              isDropTarget={activeDragType === 'epic' && overTargetId === epic.id && activeDragId !== epic.id}
+              onClick={() => onCardClick(epic.id, 'epic')}
+            />
           ))}
         </SortableContext>
       </div>
