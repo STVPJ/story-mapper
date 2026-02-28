@@ -1,12 +1,13 @@
 import { AuthProvider, useAuth } from './components/Auth/AuthProvider'
 import { LoginPage } from './components/Auth/LoginPage'
+import { AccessRequestPage } from './components/Auth/AccessRequestPage'
 import { HomeScreen } from './components/Home/HomeScreen'
 import { Board } from './components/Board/Board'
 import { Toast } from './components/shared/Toast'
 import { useStoryMapStore } from './store/useStoryMapStore'
 
 function AppContent() {
-  const { user, loading } = useAuth()
+  const { user, loading, unauthorized } = useAuth()
   const currentMapId = useStoryMapStore((s) => s.currentMapId)
 
   if (loading) {
@@ -18,6 +19,8 @@ function AppContent() {
   }
 
   if (!user) return <LoginPage />
+
+  if (unauthorized) return <AccessRequestPage />
 
   return currentMapId ? <Board /> : <HomeScreen />
 }
