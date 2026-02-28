@@ -35,8 +35,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (session) {
-        const allowed = await checkAllowlist(session)
-        setUnauthorized(!allowed)
+        try {
+          const allowed = await checkAllowlist(session)
+          setUnauthorized(!allowed)
+        } catch {
+          setUnauthorized(true)
+        }
       }
       setSession(session)
       setLoading(false)
