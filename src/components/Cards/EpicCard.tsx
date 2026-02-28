@@ -39,7 +39,7 @@ export function EpicCard({ epic, onClick, zoom = 1, isDropTarget }: EpicCardProp
       <div
         {...attributes}
         {...listeners}
-        className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing"
+        className="absolute top-2 right-2 opacity-40 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing"
       >
         <GripVertical size={14} className="text-cyan-200" />
       </div>

@@ -44,7 +44,7 @@ export function StoryCard({ story, releases, onClick, zoom = 1 }: StoryCardProps
       <div
         {...attributes}
         {...listeners}
-        className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing"
+        className="absolute top-2 right-2 opacity-40 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing"
       >
         <GripVertical size={14} className="text-gray-500" />
       </div>

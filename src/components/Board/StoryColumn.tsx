@@ -105,7 +105,7 @@ export function StoryColumn({ epic, releases, onCardClick, onAddStory, activeDra
 
       <button
         onClick={() => onAddStory(epic.id)}
-        className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 px-2 py-1.5 hover:bg-gray-50 rounded-lg transition-colors w-full"
+        className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-300 px-2 py-1.5 hover:bg-gray-800 rounded-lg transition-colors w-full"
       >
         <Plus size={12} /> Add Story
       </button>

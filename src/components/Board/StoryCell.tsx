@@ -54,9 +54,9 @@ export function StoryCell({
 
       <button
         onClick={() => onAddStory(epicId, releaseId)}
-        className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-300 px-2 py-1 hover:bg-gray-800 rounded transition-colors w-full opacity-0 hover:opacity-100 focus:opacity-100"
+        className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-300 px-2 py-1 hover:bg-gray-800 rounded transition-colors w-full"
       >
-        <Plus size={10} /> Add
+        <Plus size={10} /> Add Story
       </button>
     </div>
   )
