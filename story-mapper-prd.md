@@ -583,26 +583,6 @@ story-mapper/
 
 ---
 
-## Implementation Notes for Claude Code
-
-### Build Order (Recommended)
-
-1. **Scaffold:** Vite + React + TypeScript + Tailwind setup
-2. **Supabase Client:** Set up `supabase.ts` client singleton, `.env.local` with credentials
-3. **Auth:** AuthProvider context, LoginPage with GitHub OAuth, route protection, UserMenu component
-4. **Types:** Define all TypeScript interfaces in `types/index.ts`
-5. **Database Schema:** SQL to create tables, enable RLS, and add policies (include in a `supabase/schema.sql` file in the repo for reference)
-6. **Store:** Implement Zustand store with Supabase CRUD operations, optimistic updates, and data fetching
-7. **Home Screen:** Map listing, create, rename, delete, duplicate
-8. **Board Layout:** Static rendering of Features, Epics, Stories in the correct grid layout
-9. **Card Components:** Visually distinct cards with hover states
-10. **Card Modal:** Click-to-edit modal with auto-save to Supabase
-11. **Release System:** Release management UI + horizontal dividers on the board
-12. **Drag and Drop:** Implement all DnD operations using @dnd-kit, with batched Supabase reorder writes
-13. **Story-to-Epic Promotion:** Handle the drop-into-epic-row interaction
-14. **Import/Export:** JSON file download and upload (with UUID regeneration on import)
-15. **Zoom:** CSS transform-based zoom controls
-16. **Polish:** Transitions, loading states, error toasts, empty states, edge cases
 
 ### Key Implementation Details
 

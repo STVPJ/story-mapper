@@ -89,6 +89,9 @@ vi.mock('../lib/supabase', () => ({ supabase: mockSupabase }))
 import { Button } from './shared/Button'
 import { ColourPicker } from './shared/ColourPicker'
 import { Toast } from './shared/Toast'
+import { Input } from './shared/Input'
+import { ConfirmDialog } from './shared/ConfirmDialog'
+import { PromptDialog } from './shared/PromptDialog'
 import { FeatureCard } from './Cards/FeatureCard'
 import { EpicCard } from './Cards/EpicCard'
 import { StoryCard } from './Cards/StoryCard'
@@ -347,5 +350,387 @@ describe('StoryCard', () => {
     render(<StoryCard story={story} releases={releases} onClick={handleClick} />)
     await userEvent.click(screen.getByText('Add login button'))
     expect(handleClick).toHaveBeenCalledTimes(1)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Input
+// ---------------------------------------------------------------------------
+describe('Input', () => {
+  it('renders an input element', () => {
+    render(<Input placeholder="Type here" />)
+    expect(screen.getByPlaceholderText('Type here')).toBeInTheDocument()
+  })
+
+  it('renders label when provided', () => {
+    render(<Input label="Email" />)
+    expect(screen.getByText('Email')).toBeInTheDocument()
+  })
+
+  it('does not render label when omitted', () => {
+    const { container } = render(<Input />)
+    expect(container.querySelector('label')).toBeNull()
+  })
+
+  it('passes HTML attributes through', () => {
+    render(<Input type="email" disabled data-testid="email-input" />)
+    const input = screen.getByTestId('email-input')
+    expect(input).toBeDisabled()
+    expect(input).toHaveAttribute('type', 'email')
+  })
+
+  it('accepts user input', async () => {
+    render(<Input data-testid="name-input" />)
+    const input = screen.getByTestId('name-input')
+    await userEvent.type(input, 'Hello')
+    expect(input).toHaveValue('Hello')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// ConfirmDialog
+// ---------------------------------------------------------------------------
+describe('ConfirmDialog', () => {
+  it('renders title and message', () => {
+    render(
+      <ConfirmDialog
+        title="Delete map?"
+        message="This cannot be undone."
+        onConfirm={() => {}}
+        onCancel={() => {}}
+      />
+    )
+    expect(screen.getByText('Delete map?')).toBeInTheDocument()
+    expect(screen.getByText('This cannot be undone.')).toBeInTheDocument()
+  })
+
+  it('uses default confirm label', () => {
+    render(
+      <ConfirmDialog
+        title="Are you sure?"
+        message="Proceed?"
+        onConfirm={() => {}}
+        onCancel={() => {}}
+      />
+    )
+    expect(screen.getByText('Confirm')).toBeInTheDocument()
+  })
+
+  it('uses custom confirm label', () => {
+    render(
+      <ConfirmDialog
+        title="Delete"
+        message="Sure?"
+        confirmLabel="Delete forever"
+        onConfirm={() => {}}
+        onCancel={() => {}}
+      />
+    )
+    expect(screen.getByText('Delete forever')).toBeInTheDocument()
+  })
+
+  it('calls onConfirm when confirm button clicked', async () => {
+    const handleConfirm = vi.fn()
+    render(
+      <ConfirmDialog
+        title="Delete"
+        message="Sure?"
+        confirmLabel="Yes"
+        onConfirm={handleConfirm}
+        onCancel={() => {}}
+      />
+    )
+    await userEvent.click(screen.getByText('Yes'))
+    expect(handleConfirm).toHaveBeenCalledTimes(1)
+  })
+
+  it('calls onCancel when cancel button clicked', async () => {
+    const handleCancel = vi.fn()
+    render(
+      <ConfirmDialog
+        title="Delete"
+        message="Sure?"
+        onConfirm={() => {}}
+        onCancel={handleCancel}
+      />
+    )
+    await userEvent.click(screen.getByText('Cancel'))
+    expect(handleCancel).toHaveBeenCalledTimes(1)
+  })
+
+  it('calls onCancel on Escape key', async () => {
+    const handleCancel = vi.fn()
+    render(
+      <ConfirmDialog
+        title="Delete"
+        message="Sure?"
+        onConfirm={() => {}}
+        onCancel={handleCancel}
+      />
+    )
+    await userEvent.keyboard('{Escape}')
+    expect(handleCancel).toHaveBeenCalledTimes(1)
+  })
+
+  it('calls onConfirm on Enter key', async () => {
+    const handleConfirm = vi.fn()
+    render(
+      <ConfirmDialog
+        title="Remove item"
+        message="Sure?"
+        onConfirm={handleConfirm}
+        onCancel={() => {}}
+      />
+    )
+    await userEvent.keyboard('{Enter}')
+    // Enter fires both the global keydown handler and the autoFocused button click
+    expect(handleConfirm).toHaveBeenCalled()
+  })
+
+  it('applies danger variant when danger prop is true', () => {
+    render(
+      <ConfirmDialog
+        title="Remove item"
+        message="Sure?"
+        confirmLabel="Delete permanently"
+        danger
+        onConfirm={() => {}}
+        onCancel={() => {}}
+      />
+    )
+    const btn = screen.getByText('Delete permanently').closest('button')!
+    expect(btn.className).toContain('bg-red-600')
+  })
+
+  it('applies primary variant when danger is false', () => {
+    render(
+      <ConfirmDialog
+        title="Confirm action"
+        message="Save changes?"
+        confirmLabel="Save now"
+        onConfirm={() => {}}
+        onCancel={() => {}}
+      />
+    )
+    const btn = screen.getByText('Save now').closest('button')!
+    expect(btn.className).toContain('bg-indigo-600')
+  })
+
+  it('calls onCancel when backdrop clicked', async () => {
+    const handleCancel = vi.fn()
+    render(
+      <ConfirmDialog
+        title="Delete"
+        message="Sure?"
+        onConfirm={() => {}}
+        onCancel={handleCancel}
+      />
+    )
+    // Click the backdrop (the outer fixed div)
+    const backdrop = screen.getByText('Delete').closest('.fixed')!
+    await userEvent.click(backdrop)
+    expect(handleCancel).toHaveBeenCalled()
+  })
+
+  it('does not call onCancel when dialog body clicked', async () => {
+    const handleCancel = vi.fn()
+    render(
+      <ConfirmDialog
+        title="Delete"
+        message="Sure?"
+        onConfirm={() => {}}
+        onCancel={handleCancel}
+      />
+    )
+    // Click the inner dialog content (should stopPropagation)
+    await userEvent.click(screen.getByText('Sure?'))
+    expect(handleCancel).not.toHaveBeenCalled()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// PromptDialog
+// ---------------------------------------------------------------------------
+describe('PromptDialog', () => {
+  it('renders title', () => {
+    render(
+      <PromptDialog
+        title="Rename map"
+        onConfirm={() => {}}
+        onCancel={() => {}}
+      />
+    )
+    expect(screen.getByText('Rename map')).toBeInTheDocument()
+  })
+
+  it('uses default confirm label', () => {
+    render(
+      <PromptDialog
+        title="Rename"
+        onConfirm={() => {}}
+        onCancel={() => {}}
+      />
+    )
+    expect(screen.getByText('Save')).toBeInTheDocument()
+  })
+
+  it('uses custom confirm label', () => {
+    render(
+      <PromptDialog
+        title="Edit name"
+        confirmLabel="Rename"
+        onConfirm={() => {}}
+        onCancel={() => {}}
+      />
+    )
+    expect(screen.getByText('Rename')).toBeInTheDocument()
+  })
+
+  it('populates input with default value', () => {
+    render(
+      <PromptDialog
+        title="Rename"
+        defaultValue="My Map"
+        onConfirm={() => {}}
+        onCancel={() => {}}
+      />
+    )
+    const input = screen.getByDisplayValue('My Map')
+    expect(input).toBeInTheDocument()
+  })
+
+  it('calls onCancel when cancel button clicked', async () => {
+    const handleCancel = vi.fn()
+    render(
+      <PromptDialog
+        title="Rename"
+        onConfirm={() => {}}
+        onCancel={handleCancel}
+      />
+    )
+    await userEvent.click(screen.getByText('Cancel'))
+    expect(handleCancel).toHaveBeenCalledTimes(1)
+  })
+
+  it('calls onConfirm with trimmed value on confirm click', async () => {
+    const handleConfirm = vi.fn()
+    render(
+      <PromptDialog
+        title="Rename"
+        defaultValue="Original"
+        onConfirm={handleConfirm}
+        onCancel={() => {}}
+      />
+    )
+    const input = screen.getByDisplayValue('Original')
+    await userEvent.clear(input)
+    await userEvent.type(input, '  New Name  ')
+    await userEvent.click(screen.getByText('Save'))
+    expect(handleConfirm).toHaveBeenCalledWith('New Name')
+  })
+
+  it('does not call onConfirm when value is empty', async () => {
+    const handleConfirm = vi.fn()
+    render(
+      <PromptDialog
+        title="Rename"
+        defaultValue=""
+        onConfirm={handleConfirm}
+        onCancel={() => {}}
+      />
+    )
+    await userEvent.click(screen.getByText('Save'))
+    expect(handleConfirm).not.toHaveBeenCalled()
+  })
+
+  it('does not call onConfirm when value is only whitespace', async () => {
+    const handleConfirm = vi.fn()
+    render(
+      <PromptDialog
+        title="Rename"
+        defaultValue=""
+        onConfirm={handleConfirm}
+        onCancel={() => {}}
+      />
+    )
+    const input = screen.getByRole('textbox')
+    await userEvent.type(input, '   ')
+    await userEvent.click(screen.getByText('Save'))
+    expect(handleConfirm).not.toHaveBeenCalled()
+  })
+
+  it('calls onConfirm with trimmed value on Enter key', async () => {
+    const handleConfirm = vi.fn()
+    render(
+      <PromptDialog
+        title="Rename"
+        defaultValue="Test"
+        onConfirm={handleConfirm}
+        onCancel={() => {}}
+      />
+    )
+    const input = screen.getByDisplayValue('Test')
+    await userEvent.click(input)
+    await userEvent.keyboard('{Enter}')
+    expect(handleConfirm).toHaveBeenCalledWith('Test')
+  })
+
+  it('calls onCancel on Escape key in input', async () => {
+    const handleCancel = vi.fn()
+    render(
+      <PromptDialog
+        title="Rename"
+        defaultValue="Test"
+        onConfirm={() => {}}
+        onCancel={handleCancel}
+      />
+    )
+    const input = screen.getByDisplayValue('Test')
+    await userEvent.click(input)
+    await userEvent.keyboard('{Escape}')
+    expect(handleCancel).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not call onConfirm on Enter when input is empty', async () => {
+    const handleConfirm = vi.fn()
+    render(
+      <PromptDialog
+        title="Rename"
+        defaultValue=""
+        onConfirm={handleConfirm}
+        onCancel={() => {}}
+      />
+    )
+    const input = screen.getByRole('textbox')
+    await userEvent.click(input)
+    await userEvent.keyboard('{Enter}')
+    expect(handleConfirm).not.toHaveBeenCalled()
+  })
+
+  it('calls onCancel when backdrop clicked', async () => {
+    const handleCancel = vi.fn()
+    render(
+      <PromptDialog
+        title="Rename"
+        onConfirm={() => {}}
+        onCancel={handleCancel}
+      />
+    )
+    const backdrop = screen.getByText('Rename').closest('.fixed')!
+    await userEvent.click(backdrop)
+    expect(handleCancel).toHaveBeenCalled()
+  })
+
+  it('does not call onCancel when dialog body clicked', async () => {
+    const handleCancel = vi.fn()
+    render(
+      <PromptDialog
+        title="Rename"
+        onConfirm={() => {}}
+        onCancel={handleCancel}
+      />
+    )
+    await userEvent.click(screen.getByText('Rename'))
+    expect(handleCancel).not.toHaveBeenCalled()
   })
 })
