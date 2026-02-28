@@ -1,11 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { mockSupabase } from './mockSupabase'
 
-const isDevBypass = import.meta.env.VITE_DEV_BYPASS_AUTH === 'true'
-
-if (import.meta.env.PROD && isDevBypass) {
-  throw new Error('VITE_DEV_BYPASS_AUTH must not be enabled in production builds')
-}
+const isDevBypass = import.meta.env.DEV && import.meta.env.VITE_DEV_BYPASS_AUTH === 'true'
 
 export const supabase = isDevBypass
   ? (mockSupabase as unknown as ReturnType<typeof createClient>)

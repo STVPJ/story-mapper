@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import { supabase } from '../lib/supabase'
 import type { StoryMap, Feature, Epic, Story, Release } from '../types'
 
-let reorderTimeout: ReturnType<typeof setTimeout> | null = null
+const reorderTimeouts = new Map<string, ReturnType<typeof setTimeout>>()
 
 interface StoryMapStore {
   storyMaps: StoryMap[]
@@ -53,15 +53,20 @@ interface StoryMapStore {
   promoteStoryToEpic: (storyId: string, targetFeatureId: string, newOrder: number) => Promise<void>
 }
 
-async function getUserId(): Promise<string> {
+async function getUserId(setError: (error: string | null) => void): Promise<string | null> {
   const { data } = await supabase.auth.getUser()
-  if (!data.user) throw new Error('Not authenticated')
+  if (!data.user) {
+    setError('Not authenticated. Please sign in again.')
+    return null
+  }
   return data.user.id
 }
 
 function debouncedReorder(table: string, items: { id: string; order: number }[]) {
-  if (reorderTimeout) clearTimeout(reorderTimeout)
-  reorderTimeout = setTimeout(async () => {
+  const existing = reorderTimeouts.get(table)
+  if (existing) clearTimeout(existing)
+  reorderTimeouts.set(table, setTimeout(async () => {
+    reorderTimeouts.delete(table)
     const promises = items.map((item) =>
       supabase.from(table).update({ order: item.order }).eq('id', item.id)
     )
@@ -70,7 +75,7 @@ function debouncedReorder(table: string, items: { id: string; order: number }[])
     if (failed?.error) {
       console.error(`Reorder sync failed for ${table}:`, failed.error)
     }
-  }, 300)
+  }, 300))
 }
 
 export const useStoryMapStore = create<StoryMapStore>((set, get) => ({
@@ -118,7 +123,8 @@ export const useStoryMapStore = create<StoryMapStore>((set, get) => ({
   },
 
   createStoryMap: async (name = 'Untitled Map') => {
-    const userId = await getUserId()
+    const userId = await getUserId((e) => set({ error: e }))
+    if (!userId) return null
     const { data, error } = await supabase
       .from('story_maps')
       .insert({ name, user_id: userId })
@@ -164,7 +170,8 @@ export const useStoryMapStore = create<StoryMapStore>((set, get) => ({
     const map = get().storyMaps.find((m) => m.id === id)
     if (!map) return null
 
-    const userId = await getUserId()
+    const userId = await getUserId((e) => set({ error: e }))
+    if (!userId) return null
 
     // Create new map
     const { data: newMapData, error: mapError } = await supabase
@@ -245,7 +252,8 @@ export const useStoryMapStore = create<StoryMapStore>((set, get) => ({
 
   // Feature CRUD
   addFeature: async (storyMapId) => {
-    const userId = await getUserId()
+    const userId = await getUserId((e) => set({ error: e }))
+    if (!userId) return null
     const map = get().storyMaps.find((m) => m.id === storyMapId)
     const order = map ? map.features.length : 0
 
@@ -311,7 +319,8 @@ export const useStoryMapStore = create<StoryMapStore>((set, get) => ({
 
   // Epic CRUD
   addEpic: async (featureId) => {
-    const userId = await getUserId()
+    const userId = await getUserId((e) => set({ error: e }))
+    if (!userId) return null
     let epicCount = 0
     for (const map of get().storyMaps) {
       const feature = map.features.find((f) => f.id === featureId)
@@ -449,7 +458,8 @@ export const useStoryMapStore = create<StoryMapStore>((set, get) => ({
 
   // Story CRUD
   addStory: async (epicId, releaseId = null) => {
-    const userId = await getUserId()
+    const userId = await getUserId((e) => set({ error: e }))
+    if (!userId) return null
     let storyCount = 0
     for (const map of get().storyMaps) {
       for (const feature of map.features) {
@@ -603,7 +613,8 @@ export const useStoryMapStore = create<StoryMapStore>((set, get) => ({
 
   // Release CRUD
   addRelease: async (storyMapId) => {
-    const userId = await getUserId()
+    const userId = await getUserId((e) => set({ error: e }))
+    if (!userId) return null
     const map = get().storyMaps.find((m) => m.id === storyMapId)
     const order = map ? map.releases.length : 0
     const colours = ['#6366F1', '#8B5CF6', '#EC4899', '#EF4444', '#F97316', '#EAB308', '#22C55E', '#14B8A6', '#06B6D4', '#3B82F6']
@@ -719,7 +730,11 @@ export const useStoryMapStore = create<StoryMapStore>((set, get) => ({
     }
 
     // Create epic
-    const userId = await getUserId()
+    const userId = await getUserId((e) => set({ error: e }))
+    if (!userId) {
+      await get().fetchStoryMaps()
+      return
+    }
     const { data: epicData, error: epicError } = await supabase
       .from('epics')
       .insert({

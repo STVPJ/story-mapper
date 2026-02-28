@@ -17,6 +17,7 @@ import { X, Plus, Trash2, GripVertical } from 'lucide-react'
 import { useStoryMapStore } from '../../store/useStoryMapStore'
 import { ColourPicker } from '../shared/ColourPicker'
 import { Button } from '../shared/Button'
+import { ConfirmDialog } from '../shared/ConfirmDialog'
 import type { Release } from '../../types'
 
 interface SortableReleaseItemProps {
@@ -34,6 +35,7 @@ function SortableReleaseItem({
   updateRelease,
   deleteRelease,
 }: SortableReleaseItemProps) {
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
   const {
     attributes,
     listeners,
@@ -79,11 +81,7 @@ function SortableReleaseItem({
           className="flex-1 px-2 py-1 text-sm text-gray-200 bg-transparent border border-transparent hover:border-gray-600 focus:border-gray-500 rounded focus:outline-none"
         />
         <button
-          onClick={() => {
-            if (confirm('Delete this release? Stories will become unassigned.')) {
-              deleteRelease(release.id)
-            }
-          }}
+          onClick={() => setConfirmingDelete(true)}
           className="p-1 hover:bg-red-900/30 rounded text-gray-500 hover:text-red-400"
         >
           <Trash2 size={14} />
@@ -100,6 +98,20 @@ function SortableReleaseItem({
             }}
           />
         </div>
+      )}
+
+      {confirmingDelete && (
+        <ConfirmDialog
+          title="Delete Release"
+          message={`Delete "${release.name}"? Stories will become unassigned.`}
+          confirmLabel="Delete"
+          danger
+          onConfirm={() => {
+            deleteRelease(release.id)
+            setConfirmingDelete(false)
+          }}
+          onCancel={() => setConfirmingDelete(false)}
+        />
       )}
     </div>
   )

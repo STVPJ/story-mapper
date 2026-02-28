@@ -1,18 +1,20 @@
 import { useEffect, useState, useRef } from 'react'
 import { useStoryMapStore } from '../../store/useStoryMapStore'
 import { Button } from '../shared/Button'
+import { ConfirmDialog } from '../shared/ConfirmDialog'
+import { PromptDialog } from '../shared/PromptDialog'
 import { Plus, MoreHorizontal, Copy, Trash2, Pencil } from 'lucide-react'
 import { UserMenu } from '../Auth/UserMenu'
 
 interface MapMenuProps {
   mapId: string
   onClose: () => void
+  onRename: () => void
+  onDelete: () => void
 }
 
-function MapMenu({ mapId, onClose }: MapMenuProps) {
-  const { deleteStoryMap, duplicateStoryMap, updateStoryMapName } = useStoryMapStore()
-  const storyMaps = useStoryMapStore((s) => s.storyMaps)
-  const map = storyMaps.find((m) => m.id === mapId)
+function MapMenu({ mapId, onClose, onRename, onDelete }: MapMenuProps) {
+  const { duplicateStoryMap } = useStoryMapStore()
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -27,9 +29,8 @@ function MapMenu({ mapId, onClose }: MapMenuProps) {
     <div ref={ref} className="absolute right-0 top-8 w-44 bg-gray-800 rounded-lg shadow-lg border border-gray-700 py-1 z-10">
       <button
         onClick={() => {
-          const name = prompt('Rename map:', map?.name)
-          if (name) updateStoryMapName(mapId, name)
           onClose()
+          onRename()
         }}
         className="flex items-center gap-2 w-full px-4 py-2 text-sm text-gray-300 hover:bg-gray-700"
       >
@@ -46,10 +47,8 @@ function MapMenu({ mapId, onClose }: MapMenuProps) {
       </button>
       <button
         onClick={() => {
-          if (confirm('Delete this story map? This cannot be undone.')) {
-            deleteStoryMap(mapId)
-          }
           onClose()
+          onDelete()
         }}
         className="flex items-center gap-2 w-full px-4 py-2 text-sm text-red-400 hover:bg-red-900/30"
       >
@@ -60,10 +59,12 @@ function MapMenu({ mapId, onClose }: MapMenuProps) {
 }
 
 export function HomeScreen() {
-  const { storyMaps, loading, fetchStoryMaps, createStoryMap, setCurrentMap } = useStoryMapStore()
+  const { storyMaps, loading, fetchStoryMaps, createStoryMap, setCurrentMap, deleteStoryMap, updateStoryMapName } = useStoryMapStore()
   const [menuOpen, setMenuOpen] = useState<string | null>(null)
   const [showNameDialog, setShowNameDialog] = useState(false)
   const [newMapName, setNewMapName] = useState('')
+  const [renamingMapId, setRenamingMapId] = useState<string | null>(null)
+  const [deletingMapId, setDeletingMapId] = useState<string | null>(null)
 
   useEffect(() => {
     fetchStoryMaps()
@@ -76,6 +77,9 @@ export function HomeScreen() {
     const id = await createStoryMap(name)
     if (id) setCurrentMap(id)
   }
+
+  const renamingMap = renamingMapId ? storyMaps.find((m) => m.id === renamingMapId) : null
+  const deletingMap = deletingMapId ? storyMaps.find((m) => m.id === deletingMapId) : null
 
   if (loading) {
     return (
@@ -113,6 +117,35 @@ export function HomeScreen() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Rename dialog */}
+      {renamingMap && (
+        <PromptDialog
+          title="Rename Story Map"
+          defaultValue={renamingMap.name}
+          confirmLabel="Rename"
+          onConfirm={(name) => {
+            updateStoryMapName(renamingMap.id, name)
+            setRenamingMapId(null)
+          }}
+          onCancel={() => setRenamingMapId(null)}
+        />
+      )}
+
+      {/* Delete confirmation */}
+      {deletingMap && (
+        <ConfirmDialog
+          title="Delete Story Map"
+          message={`Delete "${deletingMap.name}"? This cannot be undone.`}
+          confirmLabel="Delete"
+          danger
+          onConfirm={() => {
+            deleteStoryMap(deletingMap.id)
+            setDeletingMapId(null)
+          }}
+          onCancel={() => setDeletingMapId(null)}
+        />
       )}
 
       <div className="max-w-3xl mx-auto px-6 py-12">
@@ -157,7 +190,12 @@ export function HomeScreen() {
                     <MoreHorizontal size={18} className="text-gray-500" />
                   </button>
                   {menuOpen === map.id && (
-                    <MapMenu mapId={map.id} onClose={() => setMenuOpen(null)} />
+                    <MapMenu
+                      mapId={map.id}
+                      onClose={() => setMenuOpen(null)}
+                      onRename={() => setRenamingMapId(map.id)}
+                      onDelete={() => setDeletingMapId(map.id)}
+                    />
                   )}
                 </div>
               </div>

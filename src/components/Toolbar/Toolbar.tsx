@@ -12,6 +12,7 @@ import { useStoryMapStore } from '../../store/useStoryMapStore'
 import { UserMenu } from '../Auth/UserMenu'
 import { Button } from '../shared/Button'
 import { supabase } from '../../lib/supabase'
+import { importSchema } from '../../schemas/importSchema'
 
 interface ToolbarProps {
   onManageReleases: () => void
@@ -46,36 +47,23 @@ export function Toolbar({ onManageReleases, zoom, onZoomIn, onZoomOut, onFitToSc
 
     try {
       const text = await file.text()
-      const imported = JSON.parse(text)
+      const parsed = JSON.parse(text)
 
-      if (!imported.name || typeof imported.name !== 'string' || !Array.isArray(imported.features)) {
-        setError('Invalid story map file format')
+      const result = importSchema.safeParse(parsed)
+      if (!result.success) {
+        const issue = result.error.issues[0]
+        setError(`Invalid import: ${issue.path.join('.')} - ${issue.message}`)
         return
       }
 
-      // Validate size limits
-      const maxFeatures = 100
-      const maxEpicsPerFeature = 50
-      const maxStoriesPerEpic = 200
-      if (imported.features.length > maxFeatures) {
-        setError(`Import exceeds maximum of ${maxFeatures} features`)
-        return
-      }
-      for (const f of imported.features) {
-        if (Array.isArray(f.epics) && f.epics.length > maxEpicsPerFeature) {
-          setError(`Import exceeds maximum of ${maxEpicsPerFeature} epics per feature`)
-          return
-        }
-        for (const e of f.epics || []) {
-          if (Array.isArray(e.stories) && e.stories.length > maxStoriesPerEpic) {
-            setError(`Import exceeds maximum of ${maxStoriesPerEpic} stories per epic`)
-            return
-          }
-        }
-      }
+      const imported = result.data
 
       const { data: userData } = await supabase.auth.getUser()
-      const userId = userData.user!.id
+      if (!userData.user) {
+        setError('Not authenticated. Please sign in again.')
+        return
+      }
+      const userId = userData.user.id
 
       // Create new map
       const { data: newMap, error: mapError } = await supabase
@@ -87,7 +75,7 @@ export function Toolbar({ onManageReleases, zoom, onZoomIn, onZoomOut, onFitToSc
 
       // Import releases
       const releaseIdMap = new Map<string, string>()
-      for (const release of imported.releases || []) {
+      for (const release of imported.releases) {
         const { data } = await supabase
           .from('releases')
           .insert({
@@ -103,44 +91,44 @@ export function Toolbar({ onManageReleases, zoom, onZoomIn, onZoomOut, onFitToSc
       }
 
       // Import features → epics → stories
-      for (const feature of imported.features || []) {
+      for (const feature of imported.features) {
         const { data: newFeature } = await supabase
           .from('features')
           .insert({
             story_map_id: newMap.id,
             user_id: userId,
             title: feature.title,
-            description: feature.description || '',
-            acceptance_criteria: feature.acceptance_criteria || '',
+            description: feature.description,
+            acceptance_criteria: feature.acceptance_criteria,
             order: feature.order,
           })
           .select()
           .single()
         if (!newFeature) continue
 
-        for (const epic of feature.epics || []) {
+        for (const epic of feature.epics) {
           const { data: newEpic } = await supabase
             .from('epics')
             .insert({
               feature_id: newFeature.id,
               user_id: userId,
               title: epic.title,
-              description: epic.description || '',
-              acceptance_criteria: epic.acceptance_criteria || '',
+              description: epic.description,
+              acceptance_criteria: epic.acceptance_criteria,
               order: epic.order,
             })
             .select()
             .single()
           if (!newEpic) continue
 
-          for (const story of epic.stories || []) {
+          for (const story of epic.stories) {
             await supabase.from('stories').insert({
               epic_id: newEpic.id,
               user_id: userId,
               release_id: story.release_id ? releaseIdMap.get(story.release_id) || null : null,
               title: story.title,
-              description: story.description || '',
-              acceptance_criteria: story.acceptance_criteria || '',
+              description: story.description,
+              acceptance_criteria: story.acceptance_criteria,
               order: story.order,
             })
           }
