@@ -24,6 +24,28 @@ I wanted something in between: a focused tool that makes it fast to capture a Fe
 - **Zoom controls** — Zoom in, out, or fit-to-screen for large boards.
 - **GitHub login** — Authenticate via GitHub OAuth. All data is scoped to your account with row-level security.
 
+## Authentication & Access Control
+
+StoryMapper uses an invite-only access model. New users authenticate via GitHub but cannot use the app until an existing user approves their request.
+
+### How it works
+
+1. **Sign in with GitHub** — The user clicks "Sign in with GitHub" and is redirected to GitHub to authorize the app. No email or password is entered; Supabase handles the OAuth exchange and receives the user's primary verified email from GitHub automatically.
+
+2. **Allowlist check** — After authentication, the app checks whether the user's GitHub email exists in the `allowed_users` table. If it does, they go straight to the app.
+
+3. **Access request** — If the email is not on the allowlist, the user sees an "invite-only" notice with a "Request Access" button. Clicking it creates a pending request using their GitHub email, display name, and avatar — all pulled from the OAuth session, nothing manually entered.
+
+4. **Admin approval** — Any existing authorised user can open the "Manage Access" panel from their user menu. Pending requests are shown with Approve and Deny buttons. Approving a request adds the email to the `allowed_users` table.
+
+5. **Access granted** — The next time the approved user visits or refreshes the app, the allowlist check passes and they get full access to create and manage their own story maps.
+
+### Security layers
+
+- **Row-Level Security (RLS)** — All story map data (`story_maps`, `features`, `epics`, `stories`, `releases`) is scoped to `user_id = auth.uid()`. Users can only see and modify their own data, regardless of allowlist status.
+- **Allowlist as gate** — The `allowed_users` table controls who can access the app at all. The `access_requests` table tracks the request/approval audit trail.
+- **No shared data** — There are no collaboration features. Each user's story maps are completely isolated.
+
 ## Tech Stack
 
 | Layer | Technology |
