@@ -1,12 +1,38 @@
 # Product Requirements Document: StoryMapper
 
-## Overview
+## Problem Statement
 
-StoryMapper is a lightweight story mapping application for agile product teams. It provides a visual board for organising work into a three-level hierarchy (Features, Epics, Stories) with horizontal release slicing, drag-and-drop interaction, and card-based editing. The application is a single-page React application deployed to Vercel, with Supabase for authentication (GitHub OAuth) and data persistence.
+Story mapping is one of the most effective techniques in product management for turning discovery work into a structured set of requirements. It gives PMs a way to think about user journeys holistically before breaking them down into deliverable chunks of work.
 
-### Design Philosophy
+The problem is with the tooling. Existing options fall into two categories:
 
-This tool exists because current story mapping tools are either over-engineered SaaS products that justify subscription pricing with unnecessary features, or too basic to be useful. StoryMapper occupies the middle ground: powerful enough to be genuinely useful, simple enough to not get in the way.
+1. **Enterprise story mapping platforms** (Avion, StoriesOnBoard, Easy Agile, etc.) — these are feature-rich but come with subscription costs that are difficult to justify for individual PMs, small teams, or discovery-phase work where you don't yet know if the project will proceed. They also tend to bundle in backlog management, sprint planning, and collaboration features that add complexity without adding value when you just need to map requirements.
+
+2. **Generic whiteboard tools** (Miro templates, Lucid sticky notes, FigJam) — these are cheap or free, but they have no underlying data model. A story map in Miro is just rectangles on a canvas. You can't export the hierarchy, you can't validate it, and you can't feed it into downstream tools without manually transcribing everything.
+
+The gap is a tool that provides genuine structure — a real Feature → Epic → Story hierarchy with release slicing — without the overhead of an enterprise platform. Something that makes it fast to capture requirements during discovery and then produce a structured output (JSON) that can be consumed by LLM-assisted workflows to generate tickets in Jira, Azure DevOps, or similar delivery tools.
+
+---
+
+## Outcome Requirements
+
+These are the outcomes that StoryMapper is designed to achieve. They informed every design and scoping decision in this document.
+
+| # | Outcome | Success Measure |
+|---|---------|-----------------|
+| O1 | A PM can capture a complete requirements hierarchy in a single working session | A new story map with Features, Epics, Stories, and release assignments can be created from scratch in under 30 minutes |
+| O2 | The hierarchy is structured, not freeform | Every item belongs to a typed level (Feature → Epic → Story) with enforced parent-child relationships and ordering |
+| O3 | Requirements can be sliced by release to communicate delivery sequencing | Stories are assignable to named, ordered releases with visual dividers on the board |
+| O4 | The structured output is machine-readable and LLM-friendly | Export produces a JSON file preserving the full hierarchy, descriptions, acceptance criteria, and release assignments — ready for ingestion by AI tools or import scripts |
+| O5 | The tool runs at zero or near-zero ongoing cost | Architecture uses only free-tier services (Supabase free tier, Vercel hobby plan) with no per-seat or subscription fees |
+| O6 | Interaction is fast enough that the tool doesn't slow down thinking | Drag-and-drop, card editing, and navigation feel instant through optimistic updates; no loading spinners during normal use |
+| O7 | Data is private and isolated per user | Row-level security ensures users can only access their own maps, with no shared or collaborative access |
+
+---
+
+## Solution Overview
+
+StoryMapper is a single-page React application that provides a visual board for organising work into a three-level hierarchy (Features, Epics, Stories) with horizontal release slicing, drag-and-drop interaction, and card-based editing. It is deployed as a static site on Vercel, with Supabase for authentication (GitHub OAuth) and data persistence.
 
 ---
 
@@ -434,12 +460,25 @@ The developer must complete these steps in the Supabase dashboard before the app
 
 ## Non-Functional Requirements
 
-### Performance
+### Performance (supports O6)
 
-- The board should remain responsive with up to 10 Features, 50 Epics, and 200 Stories.
-- Drag-and-drop should feel smooth at 60fps.
-- Supabase writes should be optimistic (UI updates immediately, sync happens in background).
-- Bulk reorder writes (after drag-and-drop) should be debounced (300ms) and batched into a single Supabase call.
+- The board must remain responsive with up to 10 Features, 50 Epics, and 200 Stories.
+- Drag-and-drop must feel smooth at 60fps.
+- All mutations use optimistic updates — the UI reflects the change immediately while the database write happens in the background.
+- Bulk reorder writes (after drag-and-drop) are debounced at 300ms and batched into a single Supabase call per table.
+
+### Security & Data Isolation (supports O7)
+
+- All database tables enforce Row Level Security (RLS) scoped to `user_id = auth.uid()`.
+- Authentication is handled entirely by Supabase Auth with GitHub OAuth. No passwords are stored or managed by the application.
+- The Supabase anon key is the only credential exposed to the client. All data access is governed by RLS policies, not application-level checks.
+- Imported JSON files are validated against a Zod schema before any database writes. Malformed or oversized imports are rejected with a descriptive error.
+
+### Cost (supports O5)
+
+- The architecture must remain viable on free-tier infrastructure: Supabase free plan (500MB database, 50k monthly active users) and Vercel hobby plan.
+- No per-seat licensing, no usage-based billing, no third-party SaaS dependencies beyond Supabase and Vercel.
+- Single-user per account. No shared or collaborative features that would require connection pooling, presence, or conflict resolution.
 
 ### Accessibility
 
@@ -456,8 +495,8 @@ The developer must complete these steps in the Supabase dashboard before the app
 ### Responsive Behaviour
 
 - The board is designed for desktop use (1280px+ viewport).
-- The board should be horizontally scrollable when content overflows.
-- On smaller screens, show a warning that the tool is best used on desktop.
+- The board is horizontally scrollable when content overflows.
+- On smaller screens, a warning indicates the tool is best used on desktop.
 
 ---
 

@@ -23,3 +23,8 @@ dist-ssr
 *.sln
 *.sw?
 .vercel
+
+# Claude / review artifacts
+CLAUDE.md
+codebase_review_report.md
+SECURITY.md
