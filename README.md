@@ -2,6 +2,8 @@
 
 A lightweight story mapping tool built to solve a real problem in product management: capturing and structuring requirements without paying for enterprise tooling you don't need.
 
+**Note:** I'm a Product Manager, not a software engineer. I wrote the PRD and made all product decisions, but the code was written entirely by AI — [Claude Code](https://claude.ai/code) for development and Google Gemini for code review.
+
 ## Why I Built This
 
 As a Product Manager, story mapping is one of the most effective techniques for breaking down requirements and planning releases. But the existing tools fall into two camps:
