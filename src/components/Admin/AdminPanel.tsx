@@ -46,7 +46,8 @@ export function AdminPanel({ onClose }: AdminPanelProps) {
       .from('allowed_users')
       .insert({ email: request.email })
 
-    if (insertError) return
+    // Ignore duplicate key (23505) — email already allowed
+    if (insertError && insertError.code !== '23505') return
 
     await supabase
       .from('access_requests')
