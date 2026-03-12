@@ -3,7 +3,12 @@ import { Github } from 'lucide-react'
 
 export function LoginPage() {
   const handleLogin = async () => {
-    await supabase.auth.signInWithOAuth({ provider: 'github' })
+    await supabase.auth.signInWithOAuth({
+      provider: 'github',
+      options: {
+        redirectTo: `${window.location.origin}/`
+      }
+    })
   }
 
   return (

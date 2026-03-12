@@ -11,6 +11,8 @@ export function UserMenu() {
   const [pendingCount, setPendingCount] = useState(0)
   const ref = useRef<HTMLDivElement>(null)
 
+  const isAdmin = user?.id === import.meta.env.VITE_ADMIN_USER_ID
+
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
       if (ref.current && !ref.current.contains(e.target as Node)) {
@@ -22,6 +24,7 @@ export function UserMenu() {
   }, [])
 
   useEffect(() => {
+    if (!isAdmin) return
     async function fetchPendingCount() {
       const { count } = await supabase
         .from('access_requests')
@@ -31,7 +34,7 @@ export function UserMenu() {
       setPendingCount(count ?? 0)
     }
     fetchPendingCount()
-  }, [showAdmin])
+  }, [showAdmin, isAdmin])
 
   if (!user) return null
 
@@ -54,24 +57,26 @@ export function UserMenu() {
 
         {open && (
           <div className="absolute right-0 mt-1 w-48 bg-gray-800 rounded-lg shadow-lg border border-gray-700 py-1 z-50">
-            <button
-              onClick={() => {
-                setShowAdmin(true)
-                setOpen(false)
-              }}
-              className="flex items-center gap-2 w-full px-4 py-2 text-sm text-gray-300 hover:bg-gray-700"
-            >
-              <div className="relative">
-                <Shield size={14} />
+            {isAdmin && (
+              <button
+                onClick={() => {
+                  setShowAdmin(true)
+                  setOpen(false)
+                }}
+                className="flex items-center gap-2 w-full px-4 py-2 text-sm text-gray-300 hover:bg-gray-700"
+              >
+                <div className="relative">
+                  <Shield size={14} />
+                  {pendingCount > 0 && (
+                    <span className="absolute -top-1 -right-1 w-2 h-2 bg-amber-500 rounded-full" />
+                  )}
+                </div>
+                Manage Access
                 {pendingCount > 0 && (
-                  <span className="absolute -top-1 -right-1 w-2 h-2 bg-amber-500 rounded-full" />
+                  <span className="ml-auto text-xs text-amber-400">{pendingCount}</span>
                 )}
-              </div>
-              Manage Access
-              {pendingCount > 0 && (
-                <span className="ml-auto text-xs text-amber-400">{pendingCount}</span>
-              )}
-            </button>
+              </button>
+            )}
             <button
               onClick={async () => {
                 await supabase.auth.signOut()
