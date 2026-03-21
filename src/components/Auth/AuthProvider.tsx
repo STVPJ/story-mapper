@@ -27,13 +27,44 @@ async function checkAllowlist(session: Session): Promise<boolean> {
   return !!data
 }
 
+async function initSession() {
+  const { data: { session }, error } = await supabase.auth.getSession()
+  if (error || !session) {
+    return { session: null, unauthorized: false }
+  }
+  // If the access token is expired, try to refresh before checking allowlist
+  const expiresAt = session.expires_at ?? 0
+  if (expiresAt * 1000 < Date.now()) {
+    const { data: { session: refreshed }, error: refreshError } = await supabase.auth.refreshSession()
+    if (refreshError || !refreshed) {
+      await supabase.auth.signOut()
+      return { session: null, unauthorized: false }
+    }
+    const allowed = await checkAllowlist(refreshed)
+    return { session: refreshed, unauthorized: !allowed }
+  }
+  const allowed = await checkAllowlist(session)
+  return { session, unauthorized: !allowed }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
   const [unauthorized, setUnauthorized] = useState(false)
 
   useEffect(() => {
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
+    initSession()
+      .then(({ session, unauthorized }) => {
+        setSession(session)
+        setUnauthorized(unauthorized)
+      })
+      .catch(() => {
+        setSession(null)
+        setUnauthorized(false)
+      })
+      .finally(() => setLoading(false))
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       if (session) {
         try {
           const allowed = await checkAllowlist(session)
@@ -41,22 +72,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         } catch {
           setUnauthorized(true)
         }
-      }
-      setSession(session)
-      setLoading(false)
-    })
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      if (session) {
-        const allowed = await checkAllowlist(session)
-        setUnauthorized(!allowed)
       } else {
         setUnauthorized(false)
       }
       setSession(session)
     })
 
-    return () => subscription.unsubscribe()
+    // Re-validate session when the tab becomes visible again
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        initSession().then(({ session, unauthorized }) => {
+          setSession(session)
+          setUnauthorized(unauthorized)
+        })
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      subscription.unsubscribe()
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
   }, [])
 
   return (
