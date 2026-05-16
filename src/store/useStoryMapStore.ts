@@ -85,6 +85,10 @@ export const useStoryMapStore = create<StoryMapStore>((set, get) => ({
   },
 
   initAdapter: async (adapter) => {
+    // Idempotent: once an adapter is installed, ignore further calls.
+    // Without this, a re-entrant caller can loop (set adapter -> render
+    // -> effect -> createAdapter -> initAdapter -> ...).
+    if (get().adapter) return
     set({ adapter, loading: true, error: null })
     // If the adapter is local, wire up the maps reference
     if ('_setMapsRef' in adapter) {

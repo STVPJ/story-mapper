@@ -28,3 +28,6 @@ dist-ssr
 CLAUDE.md
 codebase_review_report.md
 .claude/
+
+# Playwright MCP artifacts
+.playwright-mcp/

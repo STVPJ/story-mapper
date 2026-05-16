@@ -8,6 +8,11 @@ import { Toast } from './components/shared/Toast'
 import { useStoryMapStore } from './store/useStoryMapStore'
 import { createAdapter, isLocalMode } from './lib/adapters'
 
+// Module-level guard: survives every re-render AND StrictMode's
+// mount/unmount/remount cycle (a useRef does not survive the remount).
+// Storage init must happen exactly once per page load.
+let bootStarted = false
+
 function AppContent() {
   const { user, loading: authLoading, unauthorized } = useAuth()
   const currentMapId = useStoryMapStore((s) => s.currentMapId)
@@ -15,15 +20,25 @@ function AppContent() {
   const adapter = useStoryMapStore((s) => s.adapter)
   const initAdapter = useStoryMapStore((s) => s.initAdapter)
 
-  // Initialise the storage adapter once auth is ready
+  // Initialise the storage adapter exactly once.
   useEffect(() => {
-    if (adapter) return // already initialised
+    if (bootStarted) return
+    if (useStoryMapStore.getState().adapter) return
     if (!isLocalMode() && !user) return // Supabase mode: wait for auth
 
-    createAdapter().then((a) => initAdapter(a))
-  }, [user, adapter, initAdapter])
+    bootStarted = true
+    createAdapter()
+      .then((a) => initAdapter(a))
+      .catch((err) => {
+        console.error('[StoryMapper] adapter init failed:', err)
+        useStoryMapStore.setState({
+          error:
+            err instanceof Error ? err.message : 'Failed to initialise storage',
+        })
+      })
+  }, [user, initAdapter])
 
-  // Show loading while auth or store is bootstrapping
+  // Show loading while auth or the initial store hydration is in flight.
   if (authLoading || storeLoading || !adapter) {
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center">
