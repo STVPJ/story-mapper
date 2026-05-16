@@ -53,6 +53,21 @@ describe('HomeScreen folder-storage CTA', () => {
     ).toBeGreaterThan(0)
   })
 
+  it('shows the CTA exactly once when there are no maps', () => {
+    useStoryMapStore.setState({
+      storyMaps: [],
+      loading: false,
+      adapter: { init: async () => [] } as never,
+      adapterKind: 'idb',
+      needsReconnect: false,
+      currentMapId: null,
+    })
+    renderHome()
+    expect(
+      screen.getAllByRole('button', { name: /use a folder/i })
+    ).toHaveLength(1)
+  })
+
   it('hides the CTA when FSA is unsupported (Firefox/Safari)', () => {
     useFolderStorageOptIn.mockReturnValue({
       supported: false,
