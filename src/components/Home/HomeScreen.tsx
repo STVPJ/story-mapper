@@ -82,9 +82,11 @@ export function HomeScreen() {
   const [importing, setImporting] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  useEffect(() => {
-    fetchStoryMaps()
-  }, [fetchStoryMaps])
+  // NOTE: do not fetch on mount. `initAdapter` already hydrates
+  // `storyMaps` from the adapter, and the Zustand store is the source
+  // of truth. Re-fetching here re-toggled the global `loading` flag,
+  // which unmounted/remounted HomeScreen and caused an infinite
+  // mount -> fetch -> loading -> unmount -> remount loop.
 
   const handleCreate = async () => {
     const name = newMapName.trim() || 'Untitled Map'
