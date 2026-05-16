@@ -291,7 +291,7 @@ export function HomeScreen() {
                 </Button>
               </>
             )}
-            {showFolderCta && (
+            {showFolderCta && storyMaps.length > 0 && (
               <Button
                 variant="secondary"
                 onClick={enableFolderStorage}
