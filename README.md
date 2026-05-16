@@ -63,6 +63,16 @@ The adapter is resolved at runtime: if `VITE_SUPABASE_URL` and `VITE_SUPABASE_AN
 
 To add a custom backend (Firebase, a REST API, etc.), implement the `StorageAdapter` interface and update the factory in `src/lib/adapters/index.ts`.
 
+### Where Your Maps Are Stored (Local Mode)
+
+In the default local-only mode, maps live entirely in your browser's **IndexedDB** -- nothing leaves your machine and no account or server is involved:
+
+- **Database:** `story-mapper` (version 1), **object store:** `maps`, keyed by each map's UUID.
+- **Record shape:** one record per story map, holding the entire denormalised `StoryMap` object (all features, epics, stories, and releases nested inside). This keeps startup to a single read and each mutation to a single debounced write -- no joins or relational queries.
+- **Persistence:** your maps survive browser restarts and offline use. Because the data is tied to that browser profile on that device, **Export to JSON** is the way to back up or move maps between machines.
+
+**Resilience fallback:** IndexedDB can be unavailable or unresponsive -- private/incognito windows, blocked site storage, a second tab holding a version upgrade, or locked-down corporate browser policies (its nastiest failure mode is `open` or a transaction hanging with no event ever firing). Every IndexedDB step is bounded by a 3-second timeout. If any step fails or hangs, StoryMapper permanently switches to an **in-memory store** for the rest of the session and logs a single console warning. The app stays fully usable, but **data in this mode is not persisted** -- it will not survive a refresh or tab close, so export your work to JSON.
+
 ### Data Model
 
 ```
