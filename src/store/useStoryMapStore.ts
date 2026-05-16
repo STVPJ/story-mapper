@@ -3,19 +3,33 @@ import type { StorageAdapter } from '../lib/adapters'
 import type { LocalStorageAdapter } from '../lib/adapters/LocalStorageAdapter'
 import type { StoryMap, Feature, Epic, Story, Release } from '../types'
 
+/** Which storage backend is currently active. */
+export type AdapterKind = 'idb' | 'fs' | 'supabase'
+
 interface StoryMapStore {
   storyMaps: StoryMap[]
   currentMapId: string | null
   loading: boolean
   error: string | null
   adapter: StorageAdapter | null
+  adapterKind: AdapterKind | null
+  /** A saved FSA folder needs the user to re-grant access this session. */
+  needsReconnect: boolean
 
   setError: (error: string | null) => void
   setCurrentMap: (id: string | null) => void
   getCurrentMap: () => StoryMap | undefined
 
   /** Initialise the store with a storage adapter. */
-  initAdapter: (adapter: StorageAdapter) => Promise<void>
+  initAdapter: (adapter: StorageAdapter, kind?: AdapterKind) => Promise<void>
+
+  /**
+   * Hot-swap the active adapter (FSA opt-in / reconnect). Synchronous and
+   * deliberately never toggles `loading` -- the maps have already been
+   * migrated by the caller, so flipping `loading` here would needlessly
+   * unmount the current screen (the documented "stuck on Loading" loop).
+   */
+  swapAdapter: (adapter: StorageAdapter, maps: StoryMap[]) => void
 
   // Data fetching
   fetchStoryMaps: () => Promise<void>
@@ -76,6 +90,8 @@ export const useStoryMapStore = create<StoryMapStore>((set, get) => ({
   loading: false,
   error: null,
   adapter: null,
+  adapterKind: null,
+  needsReconnect: false,
 
   setError: (error) => set({ error }),
   setCurrentMap: (id) => set({ currentMapId: id }),
@@ -84,12 +100,12 @@ export const useStoryMapStore = create<StoryMapStore>((set, get) => ({
     return storyMaps.find((m) => m.id === currentMapId)
   },
 
-  initAdapter: async (adapter) => {
+  initAdapter: async (adapter, kind = 'idb') => {
     // Idempotent: once an adapter is installed, ignore further calls.
     // Without this, a re-entrant caller can loop (set adapter -> render
     // -> effect -> createAdapter -> initAdapter -> ...).
     if (get().adapter) return
-    set({ adapter, loading: true, error: null })
+    set({ adapter, adapterKind: kind, loading: true, error: null })
     // If the adapter is local, wire up the maps reference
     if ('_setMapsRef' in adapter) {
       (adapter as LocalStorageAdapter)._setMapsRef(() => get().storyMaps)
@@ -100,6 +116,16 @@ export const useStoryMapStore = create<StoryMapStore>((set, get) => ({
     } catch (err) {
       set({ error: getErrorMessage(err), loading: false })
     }
+  },
+
+  swapAdapter: (adapter, maps) => {
+    if ('_setMapsRef' in adapter) {
+      (adapter as LocalStorageAdapter)._setMapsRef(() => get().storyMaps)
+    }
+    // Single synchronous set, NO loading toggle: the caller has already
+    // migrated `maps` to the new backend, currentMapId is preserved, and
+    // the screen stays mounted.
+    set({ adapter, adapterKind: 'fs', storyMaps: maps, error: null })
   },
 
   fetchStoryMaps: async () => {

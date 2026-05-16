@@ -22,6 +22,18 @@ export async function createAdapter(): Promise<StorageAdapter> {
   return new LocalStorageAdapter()
 }
 
+/**
+ * Build a File System Access adapter for a chosen directory. Not part of
+ * `createAdapter()` -- FSA is an explicit opt-in (the user picks a
+ * folder); IndexedDB stays the zero-config local default.
+ */
+export async function createFileSystemAdapter(
+  dir: FileSystemDirectoryHandle
+): Promise<StorageAdapter> {
+  const { FileSystemAdapter } = await import('./FileSystemAdapter')
+  return new FileSystemAdapter(dir)
+}
+
 /** True when running in local-first mode (no Supabase configured). */
 export function isLocalMode(): boolean {
   return !import.meta.env.VITE_SUPABASE_URL || !import.meta.env.VITE_SUPABASE_ANON_KEY

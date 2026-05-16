@@ -18,6 +18,7 @@ I wanted something in between: a focused tool that makes it fast to capture a Fe
 ## What It Does
 
 - **Local-first** -- all data persists in your browser's IndexedDB. No account, no server, no internet connection required. Your maps survive browser restarts.
+- **Optional folder storage** -- on Chromium browsers, store maps as plain JSON files in a folder you choose, so data survives browser resets and syncs/backs up via iCloud, Dropbox, or git ([details](#folder-storage-optional)).
 - **Three-level hierarchy** -- Features contain Epics, which contain Stories. Drag and drop at every level to reorder, reparent, or promote items.
 - **Release slicing** -- Create named, colour-coded releases and assign stories to them. Horizontal dividers show which work ships when.
 - **Drag-and-drop everywhere** -- Reorder features, move epics between features (child stories follow), drag stories across epics or releases.
@@ -54,24 +55,37 @@ From the toolbar's **Export** dropdown you can download:
 
 ### Storage Adapter Pattern
 
-The persistence layer is abstracted behind a `StorageAdapter` interface (`src/lib/adapters/StorageAdapter.ts`). Two implementations ship out of the box:
+The persistence layer is abstracted behind a `StorageAdapter` interface (`src/lib/adapters/StorageAdapter.ts`). The map-snapshot adapters share a common base (`MapSnapshotAdapterBase`) that holds all the CRUD logic and the 300ms write debounce; each concrete adapter just supplies a sink (`loadAll` / `persistMap` / `removeMap`). Three ship out of the box:
 
-- **LocalStorageAdapter** (default) -- stores each map as a single denormalised record in IndexedDB. Writes are debounced at 300ms. No configuration needed.
+- **LocalStorageAdapter** (default) -- stores each map as a single denormalised record in IndexedDB. No configuration needed.
+- **FileSystemAdapter** (opt-in, Chromium) -- writes one JSON file per map into a folder you choose. See [Folder Storage](#folder-storage-optional) below.
 - **SupabaseAdapter** (optional) -- uses Supabase PostgreSQL with row-level security. Enable it by setting environment variables (see below).
 
 The adapter is resolved at runtime: if `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are set, the Supabase adapter loads; otherwise the local adapter is used. The Supabase SDK is only bundled when actually needed thanks to dynamic imports.
 
-To add a custom backend (Firebase, a REST API, etc.), implement the `StorageAdapter` interface and update the factory in `src/lib/adapters/index.ts`.
+To add a custom backend (Firebase, a REST API, etc.), implement the `StorageAdapter` interface (or subclass `MapSnapshotAdapterBase`) and update the factory in `src/lib/adapters/index.ts`.
 
 ### Where Your Maps Are Stored (Local Mode)
 
 In the default local-only mode, maps live entirely in your browser's **IndexedDB** -- nothing leaves your machine and no account or server is involved:
 
-- **Database:** `story-mapper` (version 1), **object store:** `maps`, keyed by each map's UUID.
+- **Database:** `story-mapper` (version 2), **object store:** `maps`, keyed by each map's UUID (a second keyless `fsHandles` store holds the optional folder handle described below; v1 users are migrated with zero data loss).
 - **Record shape:** one record per story map, holding the entire denormalised `StoryMap` object (all features, epics, stories, and releases nested inside). This keeps startup to a single read and each mutation to a single debounced write -- no joins or relational queries.
 - **Persistence:** your maps survive browser restarts and offline use. Because the data is tied to that browser profile on that device, **Export to JSON** is the way to back up or move maps between machines.
 
-**Resilience fallback:** IndexedDB can be unavailable or unresponsive -- private/incognito windows, blocked site storage, a second tab holding a version upgrade, or locked-down corporate browser policies (its nastiest failure mode is `open` or a transaction hanging with no event ever firing). Every IndexedDB step is bounded by a 3-second timeout. If any step fails or hangs, StoryMapper permanently switches to an **in-memory store** for the rest of the session and logs a single console warning. The app stays fully usable, but **data in this mode is not persisted** -- it will not survive a refresh or tab close, so export your work to JSON.
+**Resilience fallback:** IndexedDB can be unavailable or unresponsive -- private/incognito windows, blocked site storage, a second tab holding a version upgrade, or locked-down corporate browser policies (its nastiest failure mode is `open` or a transaction hanging with no event ever firing). Every IndexedDB step is bounded by a 3-second timeout. If any step fails or hangs, StoryMapper permanently switches to an **in-memory store** for the rest of the session. The app stays fully usable, but **data in this mode is not persisted** -- it will not survive a refresh or tab close.
+
+So this failure is never silent, a **persistent warning banner** appears at the top of the app the moment the fallback engages, telling you that storage is unavailable and that you should export your work to JSON. (A single console warning is also logged for diagnostics.)
+
+### Folder Storage (optional)
+
+For a stronger, Obsidian-style local-first model you can store maps as **plain JSON files in a folder on your computer** instead of in browser storage. On the home screen, click **"Use a folder"** and pick a directory. From then on:
+
+- Each map is a human-readable file (`mobile-redesign--a1b2c3.json`); renaming a map renames its file.
+- The folder is the source of truth, so your maps survive clearing site data, incognito, even reinstalling the browser -- and the folder syncs/backs up via iCloud, Dropbox, or git for free.
+- If the folder already contains maps, you choose how to reconcile: merge (your open maps win on conflicts), use the folder's maps, or cancel.
+
+This uses the [File System Access API](https://developer.mozilla.org/docs/Web/API/File_System_API), which is **Chromium-only** (Chrome, Edge, Brave) and needs a secure context, so the "Use a folder" button only appears there -- Firefox and Safari transparently keep using IndexedDB. Browsers don't persist folder permission across sessions, so on a fresh load StoryMapper shows a one-click **"Reconnect your maps folder"** screen (choosing *Use browser storage instead* permanently switches that browser back to IndexedDB).
 
 ### Data Model
 

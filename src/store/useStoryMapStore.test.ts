@@ -79,6 +79,68 @@ describe('useStoryMapStore', () => {
     await getState().initAdapter(createMemoryAdapter())
   })
 
+  // ─── swapAdapter (FSA hot-swap) ────────────────────────────────────
+  describe('swapAdapter', () => {
+    it('installs the new adapter, replaces maps and tags it fs', () => {
+      const next = createMemoryAdapter()
+      const maps = [
+        {
+          id: 'm1', user_id: 'local', name: 'On disk',
+          features: [], releases: [],
+          created_at: '2026-01-01T00:00:00.000Z',
+          updated_at: '2026-01-01T00:00:00.000Z',
+        },
+      ]
+      getState().setCurrentMap('m1')
+
+      getState().swapAdapter(next, maps)
+
+      expect(getState().adapter).toBe(next)
+      expect(getState().storyMaps).toEqual(maps)
+      expect(getState().adapterKind).toBe('fs')
+      expect(getState().currentMapId).toBe('m1') // screen not torn down
+    })
+
+    it('never flips loading (would unmount the screen)', () => {
+      const seen: boolean[] = []
+      const unsub = useStoryMapStore.subscribe((s) => seen.push(s.loading))
+
+      getState().swapAdapter(createMemoryAdapter(), [])
+      unsub()
+
+      expect(seen.every((l) => l === false)).toBe(true)
+      expect(getState().loading).toBe(false)
+    })
+
+    it('routes subsequent persistence to the new adapter', async () => {
+      let oldCalls = 0
+      let newCalls = 0
+      const old = getState().adapter as StorageAdapter & {
+        createMap: () => Promise<void>
+      }
+      old.createMap = async () => { oldCalls++ }
+      const next = createMemoryAdapter()
+      next.createMap = async () => { newCalls++ }
+
+      getState().swapAdapter(next, [])
+      await getState().createStoryMap('After swap')
+
+      expect(newCalls).toBe(1)
+      expect(oldCalls).toBe(0)
+    })
+
+    it('wires _setMapsRef on the new adapter', () => {
+      let wired = false
+      const next = createMemoryAdapter()
+      const origSet = next._setMapsRef
+      next._setMapsRef = (g) => { wired = true; origSet(g) }
+
+      getState().swapAdapter(next, [])
+
+      expect(wired).toBe(true)
+    })
+  })
+
   // ─── State management ──────────────────────────────────────────────
   describe('state management', () => {
     it('setCurrentMap updates currentMapId', () => {

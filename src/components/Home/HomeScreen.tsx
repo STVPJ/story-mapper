@@ -3,8 +3,10 @@ import { useStoryMapStore } from '../../store/useStoryMapStore'
 import { Button } from '../shared/Button'
 import { ConfirmDialog } from '../shared/ConfirmDialog'
 import { PromptDialog } from '../shared/PromptDialog'
-import { Plus, MoreHorizontal, Copy, Trash2, Pencil, Upload } from 'lucide-react'
+import { Plus, MoreHorizontal, Copy, Trash2, Pencil, Upload, FolderOpen } from 'lucide-react'
 import { UserMenu } from '../Auth/UserMenu'
+import { useFolderStorageOptIn } from '../Storage/useFolderStorageOptIn'
+import { ExistingFilesDialog } from '../Storage/ExistingFilesDialog'
 import { importSchema } from '../../schemas/importSchema'
 import type { StoryMap, Feature, Epic, Story, Release } from '../../types'
 
@@ -73,7 +75,15 @@ export function HomeScreen() {
     updateStoryMapName,
     setError,
     adapter,
+    adapterKind,
   } = useStoryMapStore()
+  const {
+    supported: folderSupported,
+    busy: folderBusy,
+    enable: enableFolderStorage,
+    conflict: folderConflict,
+  } = useFolderStorageOptIn()
+  const showFolderCta = folderSupported && adapterKind !== 'fs'
   const [menuOpen, setMenuOpen] = useState<string | null>(null)
   const [showNameDialog, setShowNameDialog] = useState(false)
   const [newMapName, setNewMapName] = useState('')
@@ -257,6 +267,16 @@ export function HomeScreen() {
         />
       )}
 
+      {folderConflict && (
+        <ExistingFilesDialog
+          folderCount={folderConflict.folderCount}
+          currentCount={folderConflict.currentCount}
+          onMerge={() => folderConflict.resolve('merge')}
+          onUseFolder={() => folderConflict.resolve('folder')}
+          onCancel={() => folderConflict.resolve('cancel')}
+        />
+      )}
+
       <div className="max-w-3xl mx-auto px-6 py-12">
         <div className="flex items-center justify-between mb-8">
           <h1 className="text-2xl font-bold text-gray-100">Your Story Maps</h1>
@@ -270,6 +290,15 @@ export function HomeScreen() {
                   <Plus size={16} /> New Map
                 </Button>
               </>
+            )}
+            {showFolderCta && (
+              <Button
+                variant="secondary"
+                onClick={enableFolderStorage}
+                disabled={folderBusy}
+              >
+                <FolderOpen size={16} /> Use a folder
+              </Button>
             )}
             <UserMenu />
             <input
@@ -292,6 +321,15 @@ export function HomeScreen() {
               <Button variant="ghost" onClick={() => fileInputRef.current?.click()} disabled={importing}>
                 <Upload size={16} /> {importing ? 'Importing...' : 'Import JSON'}
               </Button>
+              {showFolderCta && (
+                <Button
+                  variant="secondary"
+                  onClick={enableFolderStorage}
+                  disabled={folderBusy}
+                >
+                  <FolderOpen size={16} /> Use a folder
+                </Button>
+              )}
             </div>
           </div>
         ) : (
