@@ -245,13 +245,16 @@ export function Board() {
         onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
       >
-        <div className="flex-1 overflow-auto p-6">
+        <div className="flex-1 overflow-auto">
           <div
-            style={{ transform: `scale(${zoom})`, transformOrigin: 'top left' }}
-            className="inline-block"
+            // CSS `zoom` (not `transform: scale`) so `position: sticky`
+            // still works -- a transformed ancestor would become the
+            // containing block and break the sticky header/labels.
+            style={{ zoom }}
+            className="inline-block p-6"
           >
-            {/* ── Feature + Epic header ── */}
-            <div className="flex gap-4 items-start">
+            {/* ── Feature + Epic header (sticky on vertical scroll) ── */}
+            <div className="flex gap-4 items-start sticky top-0 z-20 bg-gray-900 pb-2">
               <SortableContext
                 items={map.features.map((f) => f.id)}
                 strategy={horizontalListSortingStrategy}
