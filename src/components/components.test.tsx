@@ -39,51 +39,6 @@ vi.mock('@dnd-kit/utilities', () => ({
 }))
 
 // ---------------------------------------------------------------------------
-// Mock Supabase (needed transitively by store)
-// ---------------------------------------------------------------------------
-const { mockSupabase } = vi.hoisted(() => ({
-  mockSupabase: {
-    auth: {
-      getUser: () => Promise.resolve({ data: { user: { id: 'test-user' } } }),
-      getSession: () =>
-        Promise.resolve({
-          data: {
-            session: {
-              user: {
-                id: 'test-user',
-                email: 'test@test.com',
-                user_metadata: { full_name: 'Test User', avatar_url: '' },
-              },
-            },
-          },
-        }),
-      onAuthStateChange: () => ({
-        data: { subscription: { unsubscribe: () => {} } },
-      }),
-      signOut: () => Promise.resolve({}),
-      signInWithOAuth: () => Promise.resolve({}),
-    },
-    from: () => ({
-      select: () => ({
-        order: () => ({
-          then: (fn: (val: { data: unknown[]; error: null }) => void) =>
-            fn({ data: [], error: null }),
-        }),
-      }),
-      insert: () => ({
-        select: () => ({
-          single: () => Promise.resolve({ data: null, error: null }),
-        }),
-      }),
-      update: () => ({ eq: () => Promise.resolve({ data: null, error: null }) }),
-      delete: () => ({ eq: () => Promise.resolve({ data: null, error: null }) }),
-    }),
-  },
-}))
-
-vi.mock('../lib/supabase', () => ({ supabase: mockSupabase }))
-
-// ---------------------------------------------------------------------------
 // Imports (after mocks)
 // ---------------------------------------------------------------------------
 import { Button } from './shared/Button'

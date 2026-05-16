@@ -1,10 +1,18 @@
 import { useState, useEffect } from 'react'
-import { supabase } from '../../lib/supabase'
 import { useAuth } from './AuthProvider'
 import { LogOut, Send, CheckCircle } from 'lucide-react'
 
+async function getSupabaseClient() {
+  const { SupabaseAdapter } = await import('../../lib/adapters/SupabaseAdapter')
+  const adapter = new SupabaseAdapter(
+    import.meta.env.VITE_SUPABASE_URL,
+    import.meta.env.VITE_SUPABASE_ANON_KEY
+  )
+  return adapter.client
+}
+
 export function AccessRequestPage() {
-  const { user } = useAuth()
+  const { user, signOut } = useAuth()
   const [submitted, setSubmitted] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -15,7 +23,8 @@ export function AccessRequestPage() {
 
   useEffect(() => {
     async function checkExisting() {
-      const { data } = await supabase
+      const client = await getSupabaseClient()
+      const { data } = await client
         .from('access_requests')
         .select('id, status')
         .eq('email', email)
@@ -31,7 +40,8 @@ export function AccessRequestPage() {
 
   const handleRequest = async () => {
     setError(null)
-    const { error: insertError } = await supabase
+    const client = await getSupabaseClient()
+    const { error: insertError } = await client
       .from('access_requests')
       .insert({
         email,
@@ -48,10 +58,6 @@ export function AccessRequestPage() {
       return
     }
     setSubmitted(true)
-  }
-
-  const handleSignOut = async () => {
-    await supabase.auth.signOut()
   }
 
   if (loading) {
@@ -107,7 +113,7 @@ export function AccessRequestPage() {
         )}
 
         <button
-          onClick={handleSignOut}
+          onClick={signOut}
           className="inline-flex items-center gap-2 px-4 py-2 text-sm text-gray-400 hover:text-gray-200 transition-colors"
         >
           <LogOut size={14} />

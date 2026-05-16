@@ -108,8 +108,8 @@ export function Board() {
       const { active, over } = event
       if (!over || active.id === over.id) return
 
-      const activeData = active.data.current as { type: string; item: any } | undefined
-      const overData = over.data.current as { type: string; item?: any; epicId?: string; releaseId?: string | null; featureId?: string } | undefined
+      const activeData = active.data.current as { type: string; item: Feature | Epic | Story } | undefined
+      const overData = over.data.current as { type: string; item?: Feature | Epic | Story; epicId?: string; releaseId?: string | null; featureId?: string } | undefined
       if (!activeData) return
 
       if (activeData.type === 'feature') {

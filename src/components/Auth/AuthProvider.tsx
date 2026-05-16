@@ -1,103 +1,141 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
-import { supabase } from '../../lib/supabase'
-import type { Session, User } from '@supabase/supabase-js'
+import type { Session } from '@supabase/supabase-js'
+import { isLocalMode } from '../../lib/adapters'
 
 interface AuthContext {
-  session: Session | null
-  user: User | null
+  user: { id: string; email: string; user_metadata?: { full_name?: string; avatar_url?: string; [key: string]: unknown } } | null
   loading: boolean
   unauthorized: boolean
+  signOut: () => Promise<void>
 }
 
-const AuthContext = createContext<AuthContext>({ session: null, user: null, loading: true, unauthorized: false })
+const AuthContext = createContext<AuthContext>({
+  user: null,
+  loading: true,
+  unauthorized: false,
+  signOut: async () => {},
+})
 
+// eslint-disable-next-line react-refresh/only-export-components -- context hook colocated with provider by design
 export function useAuth() {
   return useContext(AuthContext)
 }
 
-const isDevBypass = import.meta.env.DEV && import.meta.env.VITE_DEV_BYPASS_AUTH === 'true'
+/* ---- local-mode provider (no auth needed) ---- */
 
-async function checkAllowlist(session: Session): Promise<boolean> {
-  if (isDevBypass) return true
-  const { data } = await supabase
-    .from('allowed_users')
-    .select('id')
-    .eq('email', session.user.email ?? '')
-    .single()
-  return !!data
+function LocalAuthProvider({ children }: { children: ReactNode }) {
+  const localUser = {
+    id: 'local',
+    email: 'local@localhost',
+    user_metadata: { full_name: 'Local User', avatar_url: '' },
+  }
+
+  return (
+    <AuthContext.Provider value={{ user: localUser, loading: false, unauthorized: false, signOut: async () => {} }}>
+      {children}
+    </AuthContext.Provider>
+  )
 }
 
-async function initSession() {
-  const { data: { session }, error } = await supabase.auth.getSession()
-  if (error || !session) {
-    return { session: null, unauthorized: false }
-  }
-  // If the access token is expired, try to refresh before checking allowlist
-  const expiresAt = session.expires_at ?? 0
-  if (expiresAt * 1000 < Date.now()) {
-    const { data: { session: refreshed }, error: refreshError } = await supabase.auth.refreshSession()
-    if (refreshError || !refreshed) {
-      await supabase.auth.signOut()
-      return { session: null, unauthorized: false }
-    }
-    const allowed = await checkAllowlist(refreshed)
-    return { session: refreshed, unauthorized: !allowed }
-  }
-  const allowed = await checkAllowlist(session)
-  return { session, unauthorized: !allowed }
-}
+/* ---- Supabase-mode provider (cloud auth) ---- */
 
-export function AuthProvider({ children }: { children: ReactNode }) {
+function SupabaseAuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
   const [unauthorized, setUnauthorized] = useState(false)
 
   useEffect(() => {
-    initSession()
-      .then(({ session, unauthorized }) => {
-        setSession(session)
-        setUnauthorized(unauthorized)
-      })
-      .catch(() => {
-        setSession(null)
-        setUnauthorized(false)
-      })
-      .finally(() => setLoading(false))
+    let cancelled = false
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      if (session) {
-        try {
-          const allowed = await checkAllowlist(session)
-          setUnauthorized(!allowed)
-        } catch {
-          setUnauthorized(true)
+    async function init() {
+      try {
+        // Dynamic import so Supabase is only loaded in cloud mode
+        const { SupabaseAdapter } = await import('../../lib/adapters/SupabaseAdapter')
+        const adapter = new SupabaseAdapter(
+          import.meta.env.VITE_SUPABASE_URL,
+          import.meta.env.VITE_SUPABASE_ANON_KEY
+        )
+        const client = adapter.client
+
+        const { data: { session: s } } = await client.auth.getSession()
+        if (cancelled) return
+
+        if (!s) {
+          setSession(null)
+          setLoading(false)
+          return
         }
-      } else {
-        setUnauthorized(false)
-      }
-      setSession(session)
-    })
 
-    // Re-validate session when the tab becomes visible again
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        initSession().then(({ session, unauthorized }) => {
-          setSession(session)
-          setUnauthorized(unauthorized)
+        // Check allowlist
+        const { data: allowed } = await client
+          .from('allowed_users')
+          .select('id')
+          .eq('email', s.user.email ?? '')
+          .single()
+
+        if (!cancelled) {
+          setSession(s)
+          setUnauthorized(!allowed)
+          setLoading(false)
+        }
+
+        // Listen for auth changes
+        client.auth.onAuthStateChange(async (_event, newSession) => {
+          if (newSession) {
+            const { data: a } = await client
+              .from('allowed_users')
+              .select('id')
+              .eq('email', newSession.user.email ?? '')
+              .single()
+            setUnauthorized(!a)
+          } else {
+            setUnauthorized(false)
+          }
+          setSession(newSession)
         })
+      } catch {
+        if (!cancelled) {
+          setSession(null)
+          setLoading(false)
+        }
       }
     }
-    document.addEventListener('visibilitychange', handleVisibilityChange)
 
-    return () => {
-      subscription.unsubscribe()
-      document.removeEventListener('visibilitychange', handleVisibilityChange)
-    }
+    init()
+    return () => { cancelled = true }
   }, [])
 
+  const user = session?.user
+    ? {
+        id: session.user.id,
+        email: session.user.email ?? '',
+        user_metadata: session.user.user_metadata,
+      }
+    : null
+
+  const signOut = async () => {
+    try {
+      const { SupabaseAdapter } = await import('../../lib/adapters/SupabaseAdapter')
+      const adapter = new SupabaseAdapter(
+        import.meta.env.VITE_SUPABASE_URL,
+        import.meta.env.VITE_SUPABASE_ANON_KEY
+      )
+      await adapter.client.auth.signOut()
+    } catch { /* ignore */ }
+  }
+
   return (
-    <AuthContext.Provider value={{ session, user: session?.user ?? null, loading, unauthorized }}>
+    <AuthContext.Provider value={{ user, loading, unauthorized, signOut }}>
       {children}
     </AuthContext.Provider>
   )
+}
+
+/* ---- main export: picks the right provider ---- */
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  if (isLocalMode()) {
+    return <LocalAuthProvider>{children}</LocalAuthProvider>
+  }
+  return <SupabaseAuthProvider>{children}</SupabaseAuthProvider>
 }

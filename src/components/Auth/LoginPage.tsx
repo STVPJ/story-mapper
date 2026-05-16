@@ -1,9 +1,13 @@
-import { supabase } from '../../lib/supabase'
 import { Github } from 'lucide-react'
 
 export function LoginPage() {
   const handleLogin = async () => {
-    await supabase.auth.signInWithOAuth({
+    const { SupabaseAdapter } = await import('../../lib/adapters/SupabaseAdapter')
+    const adapter = new SupabaseAdapter(
+      import.meta.env.VITE_SUPABASE_URL,
+      import.meta.env.VITE_SUPABASE_ANON_KEY
+    )
+    await adapter.client.auth.signInWithOAuth({
       provider: 'github',
       options: {
         redirectTo: `${window.location.origin}/`

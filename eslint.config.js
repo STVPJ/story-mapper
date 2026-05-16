@@ -19,5 +19,19 @@ export default defineConfig([
       ecmaVersion: 2020,
       globals: globals.browser,
     },
+    rules: {
+      // Allow deliberately-unused params/vars when prefixed with `_`
+      // (the storage adapters intentionally ignore some interface args).
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        {
+          argsIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+          caughtErrorsIgnorePattern: '^_',
+          // `const { omit, ...rest } = obj` is a deliberate way to drop a key.
+          ignoreRestSiblings: true,
+        },
+      ],
+    },
   },
 ])
