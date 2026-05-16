@@ -23,8 +23,13 @@
 import type { StoryMap } from '../../types'
 
 const DB_NAME = 'story-mapper'
-const DB_VERSION = 1
+// v2 added the `fsHandles` store. Bumping the version triggers
+// `onupgradeneeded`; the store-creation guards are idempotent so v1
+// users keep every map and merely gain an empty `fsHandles` store.
+const DB_VERSION = 2
 const STORE_NAME = 'maps'
+/** Keyless store holding the persisted FSA directory handle. */
+const HANDLE_STORE = 'fsHandles'
 
 /** Max time any single IndexedDB step (open or request) may take. */
 const IDB_TIMEOUT_MS = 3000
@@ -33,7 +38,32 @@ let memoryMode = false
 const memory = new Map<string, StoryMap>()
 let dbPromise: Promise<IDBDatabase | null> | null = null
 
-function enterMemoryMode() {
+type Listener = () => void
+const listeners = new Set<Listener>()
+
+/** Whether storage has fallen back to the non-persistent in-memory store. */
+export function isMemoryMode(): boolean {
+  return memoryMode
+}
+
+/**
+ * Subscribe to the one-time transition into in-memory mode. The callback
+ * fires at most once (memory mode is permanent for the session). Returns
+ * an unsubscribe function.
+ */
+export function subscribeMemoryMode(cb: Listener): () => void {
+  listeners.add(cb)
+  return () => {
+    listeners.delete(cb)
+  }
+}
+
+/**
+ * Permanently switch to the in-memory store for the rest of the session.
+ * Called from any IndexedDB step that fails or hangs; also exposed so
+ * callers can force the fallback. Idempotent: warns and notifies once.
+ */
+export function enterMemoryMode() {
   if (memoryMode) return
   memoryMode = true
   console.warn(
@@ -41,6 +71,7 @@ function enterMemoryMode() {
       'kept in memory for this session only and will NOT survive a refresh ' +
       'or tab close. Use Export (JSON) to save your work.'
   )
+  listeners.forEach((l) => l())
 }
 
 /** Resolve a request, or `null` if it errors or does not respond in time. */
@@ -90,8 +121,13 @@ function openDb(): Promise<IDBDatabase | null> {
 
     request.onupgradeneeded = () => {
       const db = request.result
+      // Both guards are idempotent: any version bump fires this handler,
+      // and an existing store is left (with its data) untouched.
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         db.createObjectStore(STORE_NAME, { keyPath: 'id' })
+      }
+      if (!db.objectStoreNames.contains(HANDLE_STORE)) {
+        db.createObjectStore(HANDLE_STORE)
       }
     }
     request.onerror = () => finish(null)
@@ -132,6 +168,17 @@ async function getDb(): Promise<IDBDatabase | null> {
     return null
   }
   return db
+}
+
+/**
+ * Raw bounded DB handle for sibling stores (e.g. the FSA directory
+ * handle in `HANDLE_STORE`). Shares the single open/upgrade path with
+ * the maps store but, unlike `getDb()`, does NOT trigger memory mode --
+ * an unreachable handle store is not a maps-storage failure.
+ */
+export function getRawDb(): Promise<IDBDatabase | null> {
+  if (!dbPromise) dbPromise = openDb()
+  return dbPromise
 }
 
 function store(db: IDBDatabase, mode: IDBTransactionMode): IDBObjectStore {
