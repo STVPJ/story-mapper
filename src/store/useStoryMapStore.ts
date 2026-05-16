@@ -1,18 +1,21 @@
 import { create } from 'zustand'
-import { supabase } from '../lib/supabase'
+import type { StorageAdapter } from '../lib/adapters'
+import type { LocalStorageAdapter } from '../lib/adapters/LocalStorageAdapter'
 import type { StoryMap, Feature, Epic, Story, Release } from '../types'
-
-const reorderTimeouts = new Map<string, ReturnType<typeof setTimeout>>()
 
 interface StoryMapStore {
   storyMaps: StoryMap[]
   currentMapId: string | null
   loading: boolean
   error: string | null
+  adapter: StorageAdapter | null
 
   setError: (error: string | null) => void
   setCurrentMap: (id: string | null) => void
   getCurrentMap: () => StoryMap | undefined
+
+  /** Initialise the store with a storage adapter. */
+  initAdapter: (adapter: StorageAdapter) => Promise<void>
 
   // Data fetching
   fetchStoryMaps: () => Promise<void>
@@ -53,36 +56,26 @@ interface StoryMapStore {
   promoteStoryToEpic: (storyId: string, targetFeatureId: string, newOrder: number) => Promise<void>
 }
 
-async function getUserId(setError: (error: string | null) => void): Promise<string | null> {
-  const { data } = await supabase.auth.getUser()
-  if (!data.user) {
-    setError('Not authenticated. Please sign in again.')
-    return null
-  }
-  return data.user.id
+function uuid(): string {
+  return crypto.randomUUID()
 }
 
-function debouncedReorder(table: string, items: { id: string; order: number }[]) {
-  const existing = reorderTimeouts.get(table)
-  if (existing) clearTimeout(existing)
-  reorderTimeouts.set(table, setTimeout(async () => {
-    reorderTimeouts.delete(table)
-    const promises = items.map((item) =>
-      supabase.from(table).update({ order: item.order }).eq('id', item.id)
-    )
-    const results = await Promise.all(promises)
-    const failed = results.find((r) => r.error)
-    if (failed?.error) {
-      console.error(`Reorder sync failed for ${table}:`, failed.error)
-    }
-  }, 300))
+function now(): string {
+  return new Date().toISOString()
 }
+
+function getErrorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
+}
+
+const LOCAL_USER_ID = 'local'
 
 export const useStoryMapStore = create<StoryMapStore>((set, get) => ({
   storyMaps: [],
   currentMapId: null,
   loading: false,
   error: null,
+  adapter: null,
 
   setError: (error) => set({ error }),
   setCurrentMap: (id) => set({ currentMapId: id }),
@@ -91,193 +84,206 @@ export const useStoryMapStore = create<StoryMapStore>((set, get) => ({
     return storyMaps.find((m) => m.id === currentMapId)
   },
 
-  fetchStoryMaps: async () => {
-    set({ loading: true, error: null })
-    const { data, error } = await supabase
-      .from('story_maps')
-      .select('*, features(*, epics(*, stories(*))), releases(*)')
-      .order('updated_at', { ascending: false })
-
-    if (error) {
-      set({ error: error.message, loading: false })
-      return
+  initAdapter: async (adapter) => {
+    set({ adapter, loading: true, error: null })
+    // If the adapter is local, wire up the maps reference
+    if ('_setMapsRef' in adapter) {
+      (adapter as LocalStorageAdapter)._setMapsRef(() => get().storyMaps)
     }
+    try {
+      const maps = await adapter.init()
+      set({ storyMaps: maps, loading: false })
+    } catch (err) {
+      set({ error: getErrorMessage(err), loading: false })
+    }
+  },
 
-    const maps: StoryMap[] = (data || []).map((m: any) => ({
-      ...m,
-      features: (m.features || [])
-        .sort((a: Feature, b: Feature) => a.order - b.order)
-        .map((f: any) => ({
-          ...f,
-          epics: (f.epics || [])
-            .sort((a: Epic, b: Epic) => a.order - b.order)
-            .map((e: any) => ({
-              ...e,
-              stories: (e.stories || []).sort((a: Story, b: Story) => a.order - b.order),
-            })),
-        })),
-      releases: (m.releases || []).sort((a: Release, b: Release) => a.order - b.order),
-    }))
-
-    set({ storyMaps: maps, loading: false })
+  fetchStoryMaps: async () => {
+    const { adapter } = get()
+    if (!adapter) return
+    set({ loading: true, error: null })
+    try {
+      const maps = await adapter.init()
+      set({ storyMaps: maps, loading: false })
+    } catch (err) {
+      set({ error: getErrorMessage(err), loading: false })
+    }
   },
 
   createStoryMap: async (name = 'Untitled Map') => {
-    const userId = await getUserId((e) => set({ error: e }))
-    if (!userId) return null
-    const { data, error } = await supabase
-      .from('story_maps')
-      .insert({ name, user_id: userId })
-      .select()
-      .single()
+    const { adapter } = get()
+    if (!adapter) return null
 
-    if (error) {
-      set({ error: error.message })
+    const id = uuid()
+    const ts = now()
+    const newMap: StoryMap = {
+      id,
+      user_id: LOCAL_USER_ID,
+      name,
+      created_at: ts,
+      updated_at: ts,
+      features: [],
+      releases: [],
+    }
+
+    set((s) => ({ storyMaps: [newMap, ...s.storyMaps] }))
+
+    try {
+      await adapter.createMap(newMap)
+    } catch (err) {
+      set({ error: getErrorMessage(err) })
+      await get().fetchStoryMaps()
       return null
     }
 
-    const newMap: StoryMap = { ...data, features: [], releases: [] }
-    set((s) => ({ storyMaps: [newMap, ...s.storyMaps] }))
-    return data.id
+    return id
   },
 
   updateStoryMapName: async (id, name) => {
+    const { adapter } = get()
+    if (!adapter) return
+
     set((s) => ({
-      storyMaps: s.storyMaps.map((m) => (m.id === id ? { ...m, name } : m)),
+      storyMaps: s.storyMaps.map((m) =>
+        m.id === id ? { ...m, name, updated_at: now() } : m
+      ),
     }))
 
-    const { error } = await supabase.from('story_maps').update({ name }).eq('id', id)
-    if (error) {
-      set({ error: error.message })
+    try {
+      await adapter.updateMap(id, { name })
+    } catch (err) {
+      set({ error: getErrorMessage(err) })
       await get().fetchStoryMaps()
     }
   },
 
   deleteStoryMap: async (id) => {
+    const { adapter } = get()
+    if (!adapter) return
     const prev = get().storyMaps
+
     set((s) => ({
       storyMaps: s.storyMaps.filter((m) => m.id !== id),
       currentMapId: s.currentMapId === id ? null : s.currentMapId,
     }))
 
-    const { error } = await supabase.from('story_maps').delete().eq('id', id)
-    if (error) {
-      set({ error: error.message, storyMaps: prev })
+    try {
+      await adapter.deleteMap(id)
+    } catch (err) {
+      set({ error: getErrorMessage(err), storyMaps: prev })
     }
   },
 
   duplicateStoryMap: async (id) => {
+    const { adapter } = get()
+    if (!adapter) return null
+
     const map = get().storyMaps.find((m) => m.id === id)
     if (!map) return null
 
-    const userId = await getUserId((e) => set({ error: e }))
-    if (!userId) return null
+    // Deep-clone with new IDs
+    const newMapId = uuid()
+    const ts = now()
+    const releaseIdMap = new Map<string, string>()
 
-    // Create new map
-    const { data: newMapData, error: mapError } = await supabase
-      .from('story_maps')
-      .insert({ name: `${map.name} (copy)`, user_id: userId })
-      .select()
-      .single()
-    if (mapError || !newMapData) {
-      set({ error: mapError?.message || 'Failed to duplicate' })
+    const newReleases: Release[] = map.releases.map((r) => {
+      const newId = uuid()
+      releaseIdMap.set(r.id, newId)
+      return { ...r, id: newId, story_map_id: newMapId, user_id: LOCAL_USER_ID }
+    })
+
+    const newFeatures: Feature[] = map.features.map((f) => ({
+      ...f,
+      id: uuid(),
+      story_map_id: newMapId,
+      user_id: LOCAL_USER_ID,
+      epics: f.epics.map((e) => ({
+        ...e,
+        id: uuid(),
+        user_id: LOCAL_USER_ID,
+        stories: e.stories.map((s) => ({
+          ...s,
+          id: uuid(),
+          user_id: LOCAL_USER_ID,
+          release_id: s.release_id ? releaseIdMap.get(s.release_id) || null : null,
+        })),
+      })),
+    }))
+
+    // Fix up feature_id and epic_id references
+    newFeatures.forEach((f) => {
+      f.epics.forEach((e) => {
+        e.feature_id = f.id
+        e.stories.forEach((s) => {
+          s.epic_id = e.id
+        })
+      })
+    })
+
+    const newMap: StoryMap = {
+      id: newMapId,
+      user_id: LOCAL_USER_ID,
+      name: `${map.name} (copy)`,
+      created_at: ts,
+      updated_at: ts,
+      features: newFeatures,
+      releases: newReleases,
+    }
+
+    set((s) => ({ storyMaps: [newMap, ...s.storyMaps] }))
+
+    try {
+      await adapter.createMap(newMap)
+    } catch (err) {
+      set({ error: getErrorMessage(err) })
+      await get().fetchStoryMaps()
       return null
     }
 
-    // Duplicate releases
-    const releaseIdMap = new Map<string, string>()
-    for (const release of map.releases) {
-      const { data: newRelease } = await supabase
-        .from('releases')
-        .insert({
-          story_map_id: newMapData.id,
-          user_id: userId,
-          name: release.name,
-          order: release.order,
-          colour: release.colour,
-        })
-        .select()
-        .single()
-      if (newRelease) releaseIdMap.set(release.id, newRelease.id)
-    }
-
-    // Duplicate features, epics, stories
-    for (const feature of map.features) {
-      const { data: newFeature } = await supabase
-        .from('features')
-        .insert({
-          story_map_id: newMapData.id,
-          user_id: userId,
-          title: feature.title,
-          description: feature.description,
-          acceptance_criteria: feature.acceptance_criteria,
-          order: feature.order,
-        })
-        .select()
-        .single()
-      if (!newFeature) continue
-
-      for (const epic of feature.epics) {
-        const { data: newEpic } = await supabase
-          .from('epics')
-          .insert({
-            feature_id: newFeature.id,
-            user_id: userId,
-            title: epic.title,
-            description: epic.description,
-            acceptance_criteria: epic.acceptance_criteria,
-            order: epic.order,
-          })
-          .select()
-          .single()
-        if (!newEpic) continue
-
-        for (const story of epic.stories) {
-          await supabase.from('stories').insert({
-            epic_id: newEpic.id,
-            user_id: userId,
-            release_id: story.release_id ? releaseIdMap.get(story.release_id) || null : null,
-            title: story.title,
-            description: story.description,
-            acceptance_criteria: story.acceptance_criteria,
-            order: story.order,
-          })
-        }
-      }
-    }
-
-    await get().fetchStoryMaps()
-    return newMapData.id
+    return newMapId
   },
 
   // Feature CRUD
   addFeature: async (storyMapId) => {
-    const userId = await getUserId((e) => set({ error: e }))
-    if (!userId) return null
+    const { adapter } = get()
+    if (!adapter) return null
+
     const map = get().storyMaps.find((m) => m.id === storyMapId)
     const order = map ? map.features.length : 0
+    const id = uuid()
 
-    const { data, error } = await supabase
-      .from('features')
-      .insert({ story_map_id: storyMapId, user_id: userId, order })
-      .select()
-      .single()
+    const newFeature: Feature = {
+      id,
+      user_id: LOCAL_USER_ID,
+      story_map_id: storyMapId,
+      title: 'New Feature',
+      description: '',
+      acceptance_criteria: '',
+      order,
+      epics: [],
+    }
 
-    if (error) {
-      set({ error: error.message })
+    set((s) => ({
+      storyMaps: s.storyMaps.map((m) =>
+        m.id === storyMapId ? { ...m, features: [...m.features, newFeature], updated_at: now() } : m
+      ),
+    }))
+
+    try {
+      await adapter.createFeature(newFeature)
+    } catch (err) {
+      set({ error: getErrorMessage(err) })
+      await get().fetchStoryMaps()
       return null
     }
 
-    const newFeature: Feature = { ...data, epics: [] }
-    set((s) => ({
-      storyMaps: s.storyMaps.map((m) =>
-        m.id === storyMapId ? { ...m, features: [...m.features, newFeature] } : m
-      ),
-    }))
-    return data.id
+    return id
   },
 
   updateFeature: async (id, data) => {
+    const { adapter } = get()
+    if (!adapter) return
+
     set((s) => ({
       storyMaps: s.storyMaps.map((m) => ({
         ...m,
@@ -285,15 +291,19 @@ export const useStoryMapStore = create<StoryMapStore>((set, get) => ({
       })),
     }))
 
-    const { error } = await supabase.from('features').update(data).eq('id', id)
-    if (error) {
-      set({ error: error.message })
+    try {
+      await adapter.updateFeature(id, data)
+    } catch (err) {
+      set({ error: getErrorMessage(err) })
       await get().fetchStoryMaps()
     }
   },
 
   deleteFeature: async (id) => {
+    const { adapter } = get()
+    if (!adapter) return
     const prev = get().storyMaps
+
     set((s) => ({
       storyMaps: s.storyMaps.map((m) => ({
         ...m,
@@ -301,26 +311,31 @@ export const useStoryMapStore = create<StoryMapStore>((set, get) => ({
       })),
     }))
 
-    const { error } = await supabase.from('features').delete().eq('id', id)
-    if (error) {
-      set({ error: error.message, storyMaps: prev })
+    try {
+      await adapter.deleteFeature(id)
+    } catch (err) {
+      set({ error: getErrorMessage(err), storyMaps: prev })
     }
   },
 
   reorderFeatures: (storyMapId, features) => {
+    const { adapter } = get()
+    if (!adapter) return
+
     const ordered = features.map((f, i) => ({ ...f, order: i }))
     set((s) => ({
       storyMaps: s.storyMaps.map((m) =>
         m.id === storyMapId ? { ...m, features: ordered } : m
       ),
     }))
-    debouncedReorder('features', ordered.map((f) => ({ id: f.id, order: f.order })))
+    adapter.reorderFeatures(ordered.map((f) => ({ id: f.id, order: f.order })))
   },
 
   // Epic CRUD
   addEpic: async (featureId) => {
-    const userId = await getUserId((e) => set({ error: e }))
-    if (!userId) return null
+    const { adapter } = get()
+    if (!adapter) return null
+
     let epicCount = 0
     for (const map of get().storyMaps) {
       const feature = map.features.find((f) => f.id === featureId)
@@ -330,18 +345,18 @@ export const useStoryMapStore = create<StoryMapStore>((set, get) => ({
       }
     }
 
-    const { data, error } = await supabase
-      .from('epics')
-      .insert({ feature_id: featureId, user_id: userId, order: epicCount })
-      .select()
-      .single()
-
-    if (error) {
-      set({ error: error.message })
-      return null
+    const id = uuid()
+    const newEpic: Epic = {
+      id,
+      user_id: LOCAL_USER_ID,
+      feature_id: featureId,
+      title: 'New Epic',
+      description: '',
+      acceptance_criteria: '',
+      order: epicCount,
+      stories: [],
     }
 
-    const newEpic: Epic = { ...data, stories: [] }
     set((s) => ({
       storyMaps: s.storyMaps.map((m) => ({
         ...m,
@@ -350,10 +365,22 @@ export const useStoryMapStore = create<StoryMapStore>((set, get) => ({
         ),
       })),
     }))
-    return data.id
+
+    try {
+      await adapter.createEpic(newEpic)
+    } catch (err) {
+      set({ error: getErrorMessage(err) })
+      await get().fetchStoryMaps()
+      return null
+    }
+
+    return id
   },
 
   updateEpic: async (id, data) => {
+    const { adapter } = get()
+    if (!adapter) return
+
     set((s) => ({
       storyMaps: s.storyMaps.map((m) => ({
         ...m,
@@ -364,15 +391,19 @@ export const useStoryMapStore = create<StoryMapStore>((set, get) => ({
       })),
     }))
 
-    const { error } = await supabase.from('epics').update(data).eq('id', id)
-    if (error) {
-      set({ error: error.message })
+    try {
+      await adapter.updateEpic(id, data)
+    } catch (err) {
+      set({ error: getErrorMessage(err) })
       await get().fetchStoryMaps()
     }
   },
 
   deleteEpic: async (id) => {
+    const { adapter } = get()
+    if (!adapter) return
     const prev = get().storyMaps
+
     set((s) => ({
       storyMaps: s.storyMaps.map((m) => ({
         ...m,
@@ -383,13 +414,17 @@ export const useStoryMapStore = create<StoryMapStore>((set, get) => ({
       })),
     }))
 
-    const { error } = await supabase.from('epics').delete().eq('id', id)
-    if (error) {
-      set({ error: error.message, storyMaps: prev })
+    try {
+      await adapter.deleteEpic(id)
+    } catch (err) {
+      set({ error: getErrorMessage(err), storyMaps: prev })
     }
   },
 
   reorderEpics: (featureId, epics) => {
+    const { adapter } = get()
+    if (!adapter) return
+
     const ordered = epics.map((e, i) => ({ ...e, order: i }))
     set((s) => ({
       storyMaps: s.storyMaps.map((m) => ({
@@ -399,14 +434,16 @@ export const useStoryMapStore = create<StoryMapStore>((set, get) => ({
         ),
       })),
     }))
-    debouncedReorder('epics', ordered.map((e) => ({ id: e.id, order: e.order })))
+    adapter.reorderEpics(ordered.map((e) => ({ id: e.id, order: e.order })))
   },
 
   moveEpic: (epicId, targetFeatureId, newOrder) => {
+    const { adapter } = get()
+    if (!adapter) return
+
     let movedEpic: Epic | undefined
     const prev = get().storyMaps
 
-    // Find and remove epic from source
     const updated = prev.map((m) => ({
       ...m,
       features: m.features.map((f) => {
@@ -421,7 +458,6 @@ export const useStoryMapStore = create<StoryMapStore>((set, get) => ({
 
     if (!movedEpic) return
 
-    // Add to target feature
     const finalMaps = updated.map((m) => ({
       ...m,
       features: m.features.map((f) => {
@@ -436,30 +472,23 @@ export const useStoryMapStore = create<StoryMapStore>((set, get) => ({
 
     set({ storyMaps: finalMaps })
 
-    // Sync to Supabase
-    supabase
-      .from('epics')
-      .update({ feature_id: targetFeatureId, order: newOrder })
-      .eq('id', epicId)
-      .then(({ error }) => {
-        if (error) {
-          set({ error: error.message, storyMaps: prev })
-        }
-      })
+    adapter.moveEpic(epicId, targetFeatureId, newOrder).catch((err: unknown) => {
+      set({ error: getErrorMessage(err), storyMaps: prev })
+    })
 
-    // Reorder epics in target feature
     const targetFeature = finalMaps
       .flatMap((m) => m.features)
       .find((f) => f.id === targetFeatureId)
     if (targetFeature) {
-      debouncedReorder('epics', targetFeature.epics.map((e) => ({ id: e.id, order: e.order })))
+      adapter.reorderEpics(targetFeature.epics.map((e) => ({ id: e.id, order: e.order })))
     }
   },
 
   // Story CRUD
   addStory: async (epicId, releaseId = null) => {
-    const userId = await getUserId((e) => set({ error: e }))
-    if (!userId) return null
+    const { adapter } = get()
+    if (!adapter) return null
+
     let storyCount = 0
     for (const map of get().storyMaps) {
       for (const feature of map.features) {
@@ -471,15 +500,16 @@ export const useStoryMapStore = create<StoryMapStore>((set, get) => ({
       }
     }
 
-    const { data, error } = await supabase
-      .from('stories')
-      .insert({ epic_id: epicId, user_id: userId, release_id: releaseId, order: storyCount })
-      .select()
-      .single()
-
-    if (error) {
-      set({ error: error.message })
-      return null
+    const id = uuid()
+    const newStory: Story = {
+      id,
+      user_id: LOCAL_USER_ID,
+      epic_id: epicId,
+      release_id: releaseId ?? null,
+      title: 'New Story',
+      description: '',
+      acceptance_criteria: '',
+      order: storyCount,
     }
 
     set((s) => ({
@@ -488,15 +518,27 @@ export const useStoryMapStore = create<StoryMapStore>((set, get) => ({
         features: m.features.map((f) => ({
           ...f,
           epics: f.epics.map((e) =>
-            e.id === epicId ? { ...e, stories: [...e.stories, data] } : e
+            e.id === epicId ? { ...e, stories: [...e.stories, newStory] } : e
           ),
         })),
       })),
     }))
-    return data.id
+
+    try {
+      await adapter.createStory(newStory)
+    } catch (err) {
+      set({ error: getErrorMessage(err) })
+      await get().fetchStoryMaps()
+      return null
+    }
+
+    return id
   },
 
   updateStory: async (id, data) => {
+    const { adapter } = get()
+    if (!adapter) return
+
     set((s) => ({
       storyMaps: s.storyMaps.map((m) => ({
         ...m,
@@ -510,15 +552,19 @@ export const useStoryMapStore = create<StoryMapStore>((set, get) => ({
       })),
     }))
 
-    const { error } = await supabase.from('stories').update(data).eq('id', id)
-    if (error) {
-      set({ error: error.message })
+    try {
+      await adapter.updateStory(id, data)
+    } catch (err) {
+      set({ error: getErrorMessage(err) })
       await get().fetchStoryMaps()
     }
   },
 
   deleteStory: async (id) => {
+    const { adapter } = get()
+    if (!adapter) return
     const prev = get().storyMaps
+
     set((s) => ({
       storyMaps: s.storyMaps.map((m) => ({
         ...m,
@@ -532,13 +578,17 @@ export const useStoryMapStore = create<StoryMapStore>((set, get) => ({
       })),
     }))
 
-    const { error } = await supabase.from('stories').delete().eq('id', id)
-    if (error) {
-      set({ error: error.message, storyMaps: prev })
+    try {
+      await adapter.deleteStory(id)
+    } catch (err) {
+      set({ error: getErrorMessage(err), storyMaps: prev })
     }
   },
 
   reorderStories: (epicId, stories) => {
+    const { adapter } = get()
+    if (!adapter) return
+
     const ordered = stories.map((st, i) => ({ ...st, order: i }))
     set((s) => ({
       storyMaps: s.storyMaps.map((m) => ({
@@ -551,10 +601,13 @@ export const useStoryMapStore = create<StoryMapStore>((set, get) => ({
         })),
       })),
     }))
-    debouncedReorder('stories', ordered.map((st) => ({ id: st.id, order: st.order })))
+    adapter.reorderStories(ordered.map((st) => ({ id: st.id, order: st.order })))
   },
 
   moveStory: (storyId, targetEpicId, releaseId, newOrder) => {
+    const { adapter } = get()
+    if (!adapter) return
+
     let movedStory: Story | undefined
     const prev = get().storyMaps
 
@@ -592,54 +645,60 @@ export const useStoryMapStore = create<StoryMapStore>((set, get) => ({
 
     set({ storyMaps: finalMaps })
 
-    supabase
-      .from('stories')
-      .update({ epic_id: targetEpicId, release_id: releaseId, order: newOrder })
-      .eq('id', storyId)
-      .then(({ error }) => {
-        if (error) {
-          set({ error: error.message, storyMaps: prev })
-        }
-      })
+    adapter.moveStory(storyId, targetEpicId, releaseId, newOrder).catch((err: unknown) => {
+      set({ error: getErrorMessage(err), storyMaps: prev })
+    })
 
     const targetEpic = finalMaps
       .flatMap((m) => m.features)
       .flatMap((f) => f.epics)
       .find((e) => e.id === targetEpicId)
     if (targetEpic) {
-      debouncedReorder('stories', targetEpic.stories.map((st) => ({ id: st.id, order: st.order })))
+      adapter.reorderStories(targetEpic.stories.map((st) => ({ id: st.id, order: st.order })))
     }
   },
 
   // Release CRUD
   addRelease: async (storyMapId) => {
-    const userId = await getUserId((e) => set({ error: e }))
-    if (!userId) return null
+    const { adapter } = get()
+    if (!adapter) return null
+
     const map = get().storyMaps.find((m) => m.id === storyMapId)
     const order = map ? map.releases.length : 0
     const colours = ['#6366F1', '#8B5CF6', '#EC4899', '#EF4444', '#F97316', '#EAB308', '#22C55E', '#14B8A6', '#06B6D4', '#3B82F6']
     const colour = colours[order % colours.length]
 
-    const { data, error } = await supabase
-      .from('releases')
-      .insert({ story_map_id: storyMapId, user_id: userId, order, colour })
-      .select()
-      .single()
-
-    if (error) {
-      set({ error: error.message })
-      return null
+    const id = uuid()
+    const newRelease: Release = {
+      id,
+      user_id: LOCAL_USER_ID,
+      story_map_id: storyMapId,
+      name: 'New Release',
+      order,
+      colour,
     }
 
     set((s) => ({
       storyMaps: s.storyMaps.map((m) =>
-        m.id === storyMapId ? { ...m, releases: [...m.releases, data] } : m
+        m.id === storyMapId ? { ...m, releases: [...m.releases, newRelease] } : m
       ),
     }))
-    return data.id
+
+    try {
+      await adapter.createRelease(newRelease)
+    } catch (err) {
+      set({ error: getErrorMessage(err) })
+      await get().fetchStoryMaps()
+      return null
+    }
+
+    return id
   },
 
   updateRelease: async (id, data) => {
+    const { adapter } = get()
+    if (!adapter) return
+
     set((s) => ({
       storyMaps: s.storyMaps.map((m) => ({
         ...m,
@@ -647,16 +706,19 @@ export const useStoryMapStore = create<StoryMapStore>((set, get) => ({
       })),
     }))
 
-    const { error } = await supabase.from('releases').update(data).eq('id', id)
-    if (error) {
-      set({ error: error.message })
+    try {
+      await adapter.updateRelease(id, data)
+    } catch (err) {
+      set({ error: getErrorMessage(err) })
       await get().fetchStoryMaps()
     }
   },
 
   deleteRelease: async (id) => {
+    const { adapter } = get()
+    if (!adapter) return
     const prev = get().storyMaps
-    // Unassign stories from this release
+
     set((s) => ({
       storyMaps: s.storyMaps.map((m) => ({
         ...m,
@@ -673,24 +735,31 @@ export const useStoryMapStore = create<StoryMapStore>((set, get) => ({
       })),
     }))
 
-    const { error } = await supabase.from('releases').delete().eq('id', id)
-    if (error) {
-      set({ error: error.message, storyMaps: prev })
+    try {
+      await adapter.deleteRelease(id)
+    } catch (err) {
+      set({ error: getErrorMessage(err), storyMaps: prev })
     }
   },
 
   reorderReleases: (storyMapId, releases) => {
+    const { adapter } = get()
+    if (!adapter) return
+
     const ordered = releases.map((r, i) => ({ ...r, order: i }))
     set((s) => ({
       storyMaps: s.storyMaps.map((m) =>
         m.id === storyMapId ? { ...m, releases: ordered } : m
       ),
     }))
-    debouncedReorder('releases', ordered.map((r) => ({ id: r.id, order: r.order })))
+    adapter.reorderReleases(ordered.map((r) => ({ id: r.id, order: r.order })))
   },
 
   // Promotion
   promoteStoryToEpic: async (storyId, targetFeatureId, newOrder) => {
+    const { adapter } = get()
+    if (!adapter) return
+
     let story: Story | undefined
     const prev = get().storyMaps
 
@@ -720,53 +789,37 @@ export const useStoryMapStore = create<StoryMapStore>((set, get) => ({
       })),
     }))
 
-    set({ storyMaps: updated })
-
-    // Delete story from DB
-    const { error: deleteError } = await supabase.from('stories').delete().eq('id', storyId)
-    if (deleteError) {
-      set({ error: deleteError.message, storyMaps: prev })
-      return
+    // Create new epic from story data
+    const epicId = crypto.randomUUID()
+    const newEpic: Epic = {
+      id: epicId,
+      user_id: LOCAL_USER_ID,
+      feature_id: targetFeatureId,
+      title: story.title,
+      description: story.description,
+      acceptance_criteria: story.acceptance_criteria,
+      order: newOrder,
+      stories: [],
     }
 
-    // Create epic
-    const userId = await getUserId((e) => set({ error: e }))
-    if (!userId) {
-      await get().fetchStoryMaps()
-      return
-    }
-    const { data: epicData, error: epicError } = await supabase
-      .from('epics')
-      .insert({
-        feature_id: targetFeatureId,
-        user_id: userId,
-        title: story.title,
-        description: story.description,
-        acceptance_criteria: story.acceptance_criteria,
-        order: newOrder,
-      })
-      .select()
-      .single()
-
-    if (epicError) {
-      set({ error: epicError.message })
-      await get().fetchStoryMaps()
-      return
-    }
-
-    const newEpic: Epic = { ...epicData, stories: [] }
-    set((s) => ({
-      storyMaps: s.storyMaps.map((m) => ({
-        ...m,
-        features: m.features.map((f) => {
-          if (f.id === targetFeatureId) {
-            const epics = [...f.epics]
-            epics.splice(newOrder, 0, newEpic)
-            return { ...f, epics: epics.map((e, i) => ({ ...e, order: i })) }
-          }
-          return f
-        }),
-      })),
+    const finalMaps = updated.map((m) => ({
+      ...m,
+      features: m.features.map((f) => {
+        if (f.id === targetFeatureId) {
+          const epics = [...f.epics]
+          epics.splice(newOrder, 0, newEpic)
+          return { ...f, epics: epics.map((e, i) => ({ ...e, order: i })) }
+        }
+        return f
+      }),
     }))
+
+    set({ storyMaps: finalMaps })
+
+    try {
+      await adapter.promoteStoryToEpic(storyId, newEpic)
+    } catch (err) {
+      set({ error: getErrorMessage(err), storyMaps: prev })
+    }
   },
 }))

@@ -71,7 +71,7 @@ describe('importSchema – valid inputs', () => {
   it('accepts import with no stories on an epic (defaults to empty array)', () => {
     const data = validImport()
     const { stories, ...epicNoStories } = data.features[0].epics[0]
-    data.features[0].epics = [epicNoStories as typeof data.features[0].epics[0]]
+    data.features[0].epics = [epicNoStories as (typeof data.features[0])['epics'][number]]
     data.releases = []
     const result = importSchema.safeParse(data)
     expect(result.success).toBe(true)
@@ -142,7 +142,7 @@ describe('importSchema – valid inputs', () => {
   it('accepts story without release_id (optional)', () => {
     const data = validImport()
     const { release_id, ...storyNoRelease } = data.features[0].epics[0].stories[0]
-    data.features[0].epics[0].stories = [storyNoRelease as typeof data.features[0].epics[0].stories[0]]
+    data.features[0].epics[0].stories = [storyNoRelease as (typeof data.features[0])['epics'][number]['stories'][number]]
     data.releases = []
     const result = importSchema.safeParse(data)
     expect(result.success).toBe(true)
@@ -184,7 +184,7 @@ describe('importSchema – missing required fields', () => {
   it('rejects epic without title', () => {
     const data = validImport()
     const { title, ...noTitle } = data.features[0].epics[0]
-    data.features[0].epics = [noTitle as typeof data.features[0].epics[0]]
+    data.features[0].epics = [noTitle as (typeof data.features[0])['epics'][number]]
     const result = importSchema.safeParse(data)
     expect(result.success).toBe(false)
   })
@@ -192,7 +192,7 @@ describe('importSchema – missing required fields', () => {
   it('rejects story without title', () => {
     const data = validImport()
     const { title, ...noTitle } = data.features[0].epics[0].stories[0]
-    data.features[0].epics[0].stories = [noTitle as typeof data.features[0].epics[0].stories[0]]
+    data.features[0].epics[0].stories = [noTitle as (typeof data.features[0])['epics'][number]['stories'][number]]
     const result = importSchema.safeParse(data)
     expect(result.success).toBe(false)
   })

@@ -5,8 +5,8 @@ import { ConfirmDialog } from '../shared/ConfirmDialog'
 import { PromptDialog } from '../shared/PromptDialog'
 import { Plus, MoreHorizontal, Copy, Trash2, Pencil, Upload } from 'lucide-react'
 import { UserMenu } from '../Auth/UserMenu'
-import { supabase } from '../../lib/supabase'
 import { importSchema } from '../../schemas/importSchema'
+import type { StoryMap, Feature, Epic, Story, Release } from '../../types'
 
 interface MapMenuProps {
   mapId: string
@@ -60,8 +60,20 @@ function MapMenu({ mapId, onClose, onRename, onDelete }: MapMenuProps) {
   )
 }
 
+const LOCAL_USER_ID = 'local'
+
 export function HomeScreen() {
-  const { storyMaps, loading, fetchStoryMaps, createStoryMap, setCurrentMap, deleteStoryMap, updateStoryMapName, setError } = useStoryMapStore()
+  const {
+    storyMaps,
+    loading,
+    fetchStoryMaps,
+    createStoryMap,
+    setCurrentMap,
+    deleteStoryMap,
+    updateStoryMapName,
+    setError,
+    adapter,
+  } = useStoryMapStore()
   const [menuOpen, setMenuOpen] = useState<string | null>(null)
   const [showNameDialog, setShowNameDialog] = useState(false)
   const [newMapName, setNewMapName] = useState('')
@@ -84,7 +96,7 @@ export function HomeScreen() {
 
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    if (!file) return
+    if (!file || !adapter) return
 
     setImporting(true)
     try {
@@ -99,87 +111,74 @@ export function HomeScreen() {
       }
 
       const imported = result.data
+      const mapId = crypto.randomUUID()
+      const ts = new Date().toISOString()
 
-      const { data: userData } = await supabase.auth.getUser()
-      if (!userData.user) {
-        setError('Not authenticated. Please sign in again.')
-        return
-      }
-      const userId = userData.user.id
-
-      // Create new map
-      const { data: newMap, error: mapError } = await supabase
-        .from('story_maps')
-        .insert({ name: `${imported.name} (imported)`, user_id: userId })
-        .select()
-        .single()
-      if (mapError || !newMap) throw new Error(mapError?.message || 'Failed to create map')
-
-      // Import releases
+      // Build release ID mapping
       const releaseIdMap = new Map<string, string>()
-      for (const release of imported.releases) {
-        const { data } = await supabase
-          .from('releases')
-          .insert({
-            story_map_id: newMap.id,
-            user_id: userId,
-            name: release.name,
-            order: release.order,
-            colour: release.colour,
-          })
-          .select()
-          .single()
-        if (data) releaseIdMap.set(release.id, data.id)
-      }
-
-      // Import features → epics → stories
-      for (const feature of imported.features) {
-        const { data: newFeature } = await supabase
-          .from('features')
-          .insert({
-            story_map_id: newMap.id,
-            user_id: userId,
-            title: feature.title,
-            description: feature.description,
-            acceptance_criteria: feature.acceptance_criteria,
-            order: feature.order,
-          })
-          .select()
-          .single()
-        if (!newFeature) continue
-
-        for (const epic of feature.epics) {
-          const { data: newEpic } = await supabase
-            .from('epics')
-            .insert({
-              feature_id: newFeature.id,
-              user_id: userId,
-              title: epic.title,
-              description: epic.description,
-              acceptance_criteria: epic.acceptance_criteria,
-              order: epic.order,
-            })
-            .select()
-            .single()
-          if (!newEpic) continue
-
-          for (const story of epic.stories) {
-            await supabase.from('stories').insert({
-              epic_id: newEpic.id,
-              user_id: userId,
-              release_id: story.release_id ? releaseIdMap.get(story.release_id) || null : null,
-              title: story.title,
-              description: story.description,
-              acceptance_criteria: story.acceptance_criteria,
-              order: story.order,
-            })
-          }
+      const newReleases: Release[] = imported.releases.map((r) => {
+        const newId = crypto.randomUUID()
+        releaseIdMap.set(r.id, newId)
+        return {
+          id: newId,
+          user_id: LOCAL_USER_ID,
+          story_map_id: mapId,
+          name: r.name,
+          order: r.order,
+          colour: r.colour,
         }
+      })
+
+      // Build features with new IDs
+      const newFeatures: Feature[] = imported.features.map((f) => {
+        const featureId = crypto.randomUUID()
+        return {
+          id: featureId,
+          user_id: LOCAL_USER_ID,
+          story_map_id: mapId,
+          title: f.title,
+          description: f.description,
+          acceptance_criteria: f.acceptance_criteria,
+          order: f.order,
+          epics: (f.epics || []).map((ep) => {
+            const epicId = crypto.randomUUID()
+            return {
+              id: epicId,
+              user_id: LOCAL_USER_ID,
+              feature_id: featureId,
+              title: ep.title,
+              description: ep.description,
+              acceptance_criteria: ep.acceptance_criteria,
+              order: ep.order,
+              stories: (ep.stories || []).map((st) => ({
+                id: crypto.randomUUID(),
+                user_id: LOCAL_USER_ID,
+                epic_id: epicId,
+                release_id: st.release_id ? releaseIdMap.get(st.release_id) || null : null,
+                title: st.title,
+                description: st.description,
+                acceptance_criteria: st.acceptance_criteria,
+                order: st.order,
+              } as Story)),
+            } as Epic
+          }),
+        } as Feature
+      })
+
+      const newMap: StoryMap = {
+        id: mapId,
+        user_id: LOCAL_USER_ID,
+        name: `${imported.name} (imported)`,
+        created_at: ts,
+        updated_at: ts,
+        features: newFeatures,
+        releases: newReleases,
       }
 
+      await adapter.createMap(newMap)
       await fetchStoryMaps()
-    } catch (err: any) {
-      setError(err.message || 'Failed to import file')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to import file')
     } finally {
       setImporting(false)
       if (fileInputRef.current) fileInputRef.current.value = ''

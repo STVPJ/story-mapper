@@ -1,167 +1,59 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach } from 'vitest'
+import type { StorageAdapter } from '../lib/adapters'
+import type { StoryMap } from '../types'
 
 // ---------------------------------------------------------------------------
-// Mock Supabase with resettable in-memory database
+// In-memory storage adapter
+//
+// The store is the single source of truth; adapters only mirror state for
+// persistence. This adapter implements the same contract as
+// LocalStorageAdapter (including the `_setMapsRef` hook the store uses to
+// wire up a live reference) but keeps everything in memory so tests are
+// deterministic and free of IndexedDB/Supabase.
 // ---------------------------------------------------------------------------
-const { resetDb, mockSupabase } = vi.hoisted(() => {
-  const tables: Record<string, Record<string, unknown>[]> = {
-    story_maps: [],
-    features: [],
-    epics: [],
-    stories: [],
-    releases: [],
-  }
+function createMemoryAdapter(): StorageAdapter & { _setMapsRef: (g: () => StoryMap[]) => void } {
+  let mapsRef: () => StoryMap[] = () => []
+  let snapshot: StoryMap[] = []
 
-  const columnDefaults: Record<string, Record<string, unknown>> = {
-    features: { title: 'New Feature', description: '', acceptance_criteria: '' },
-    epics: { title: 'New Epic', description: '', acceptance_criteria: '' },
-    stories: { title: 'New Story', description: '', acceptance_criteria: '', release_id: null },
-    releases: { name: 'New Release', colour: '#6366F1' },
-    story_maps: { name: 'Untitled Map' },
-  }
-
-  function nestStoryMaps(rows: Record<string, unknown>[]) {
-    return rows.map((map) => ({
-      ...map,
-      features: tables.features
-        .filter((f) => f.story_map_id === map.id)
-        .map((f) => ({
-          ...f,
-          epics: tables.epics
-            .filter((e) => e.feature_id === f.id)
-            .map((e) => ({
-              ...e,
-              stories: tables.stories.filter((s) => s.epic_id === e.id),
-            })),
-        })),
-      releases: tables.releases.filter((r) => r.story_map_id === map.id),
-    }))
-  }
-
-  class MockQueryBuilder {
-    private _table: string
-    private _op: 'select' | 'insert' | 'update' | 'delete' = 'select'
-    private _insertData: Record<string, unknown> | null = null
-    private _updateData: Record<string, unknown> | null = null
-    private _filters: Array<[string, unknown]> = []
-    private _selectQuery = '*'
-    private _orderCol: string | null = null
-    private _orderAsc = true
-    private _isSingle = false
-
-    constructor(table: string) {
-      this._table = table
-    }
-
-    select(query?: string) {
-      if (this._op !== 'insert') this._op = 'select'
-      if (query) this._selectQuery = query
-      return this
-    }
-
-    insert(data: Record<string, unknown>) {
-      this._op = 'insert'
-      const defaults = columnDefaults[this._table] || {}
-      this._insertData = {
-        ...defaults,
-        ...data,
-        id: crypto.randomUUID(),
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      }
-      tables[this._table].push(this._insertData)
-      return this
-    }
-
-    update(data: Record<string, unknown>) {
-      this._op = 'update'
-      this._updateData = data
-      return this
-    }
-
-    delete() {
-      this._op = 'delete'
-      return this
-    }
-
-    eq(col: string, val: unknown) {
-      this._filters.push([col, val])
-      if (this._op === 'update' && this._updateData) {
-        tables[this._table] = tables[this._table].map((row) =>
-          row[col] === val ? { ...row, ...this._updateData } : row
-        )
-      } else if (this._op === 'delete') {
-        tables[this._table] = tables[this._table].filter((row) => row[col] !== val)
-      }
-      return this
-    }
-
-    order(col: string, opts?: { ascending?: boolean }) {
-      this._orderCol = col
-      this._orderAsc = opts?.ascending ?? true
-      return this
-    }
-
-    single() {
-      this._isSingle = true
-      return this._resolve()
-    }
-
-    then(
-      onFulfilled?: (val: unknown) => unknown,
-      onRejected?: (reason: unknown) => unknown
-    ) {
-      return this._resolve().then(onFulfilled, onRejected)
-    }
-
-    private _resolve(): Promise<{ data: unknown; error: null }> {
-      if (this._op === 'insert') {
-        return Promise.resolve({ data: this._insertData, error: null })
-      }
-      if (this._op === 'select') {
-        let rows = [...tables[this._table]]
-        for (const [col, val] of this._filters) {
-          rows = rows.filter((r) => r[col] === val)
-        }
-        if (this._table === 'story_maps' && this._selectQuery.includes('features(')) {
-          rows = nestStoryMaps(rows)
-        }
-        if (this._orderCol) {
-          const col = this._orderCol
-          const asc = this._orderAsc
-          rows.sort((a, b) => {
-            const av = a[col] as number
-            const bv = b[col] as number
-            return asc ? av - bv : bv - av
-          })
-        }
-        if (this._isSingle) {
-          return Promise.resolve({ data: rows[0] || null, error: null })
-        }
-        return Promise.resolve({ data: rows, error: null })
-      }
-      return Promise.resolve({ data: null, error: null })
-    }
+  // Re-capture a deep clone of the store's current maps. Called after every
+  // mutation, exactly mirroring how the real local adapter persists.
+  const persist = () => {
+    snapshot = structuredClone(mapsRef())
   }
 
   return {
-    mockSupabase: {
-      auth: {
-        getUser: () => Promise.resolve({ data: { user: { id: 'test-user-id' } } }),
-      },
-      from: (table: string) => new MockQueryBuilder(table),
+    _setMapsRef(getter) {
+      mapsRef = getter
     },
-    resetDb: () => {
-      tables.story_maps = []
-      tables.features = []
-      tables.epics = []
-      tables.stories = []
-      tables.releases = []
+    async init() {
+      return structuredClone(snapshot).sort(
+        (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+      )
     },
+    async createMap() { persist() },
+    async updateMap() { persist() },
+    async deleteMap() { persist() },
+    async createFeature() { persist() },
+    async updateFeature() { persist() },
+    async deleteFeature() { persist() },
+    reorderFeatures() { persist() },
+    async createEpic() { persist() },
+    async updateEpic() { persist() },
+    async deleteEpic() { persist() },
+    reorderEpics() { persist() },
+    async moveEpic() { persist() },
+    async createStory() { persist() },
+    async updateStory() { persist() },
+    async deleteStory() { persist() },
+    reorderStories() { persist() },
+    async moveStory() { persist() },
+    async createRelease() { persist() },
+    async updateRelease() { persist() },
+    async deleteRelease() { persist() },
+    reorderReleases() { persist() },
+    async promoteStoryToEpic() { persist() },
   }
-})
-
-vi.mock('../lib/supabase', () => ({ supabase: mockSupabase }))
+}
 
 import { useStoryMapStore } from './useStoryMapStore'
 
@@ -175,14 +67,16 @@ const findMap = (id: string) => getState().storyMaps.find((m) => m.id === id)
 // Tests
 // ---------------------------------------------------------------------------
 describe('useStoryMapStore', () => {
-  beforeEach(() => {
-    resetDb()
+  beforeEach(async () => {
     useStoryMapStore.setState({
       storyMaps: [],
       currentMapId: null,
       loading: false,
       error: null,
+      adapter: null,
     })
+    // A fresh adapter per test => isolated, empty persistence.
+    await getState().initAdapter(createMemoryAdapter())
   })
 
   // ─── State management ──────────────────────────────────────────────

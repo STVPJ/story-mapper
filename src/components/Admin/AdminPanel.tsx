@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from 'react'
-import { supabase } from '../../lib/supabase'
 import { X, Check, Ban } from 'lucide-react'
 
 interface AccessRequest {
@@ -15,12 +14,22 @@ interface AdminPanelProps {
   onClose: () => void
 }
 
+async function getSupabaseClient() {
+  const { SupabaseAdapter } = await import('../../lib/adapters/SupabaseAdapter')
+  const adapter = new SupabaseAdapter(
+    import.meta.env.VITE_SUPABASE_URL,
+    import.meta.env.VITE_SUPABASE_ANON_KEY
+  )
+  return adapter.client
+}
+
 export function AdminPanel({ onClose }: AdminPanelProps) {
   const [requests, setRequests] = useState<AccessRequest[]>([])
   const [loading, setLoading] = useState(true)
 
   const fetchRequests = useCallback(async () => {
-    const { data } = await supabase
+    const client = await getSupabaseClient()
+    const { data } = await client
       .from('access_requests')
       .select('*')
       .order('created_at', { ascending: false })
@@ -30,6 +39,9 @@ export function AdminPanel({ onClose }: AdminPanelProps) {
   }, [])
 
   useEffect(() => {
+    // Fetch-on-mount: setState happens only after the awaited request
+    // resolves, not synchronously within the effect body.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchRequests()
   }, [fetchRequests])
 
@@ -42,14 +54,14 @@ export function AdminPanel({ onClose }: AdminPanelProps) {
   }, [onClose])
 
   const handleApprove = async (request: AccessRequest) => {
-    const { error: insertError } = await supabase
+    const client = await getSupabaseClient()
+    const { error: insertError } = await client
       .from('allowed_users')
       .insert({ email: request.email })
 
-    // Ignore duplicate key (23505) — email already allowed
     if (insertError && insertError.code !== '23505') return
 
-    await supabase
+    await client
       .from('access_requests')
       .update({ status: 'approved', reviewed_at: new Date().toISOString() })
       .eq('id', request.id)
@@ -62,7 +74,8 @@ export function AdminPanel({ onClose }: AdminPanelProps) {
   }
 
   const handleDeny = async (request: AccessRequest) => {
-    await supabase
+    const client = await getSupabaseClient()
+    await client
       .from('access_requests')
       .update({ status: 'denied', reviewed_at: new Date().toISOString() })
       .eq('id', request.id)

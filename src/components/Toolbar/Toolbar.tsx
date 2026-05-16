@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import {
   ArrowLeft,
   Tag,
@@ -6,10 +6,14 @@ import {
   ZoomIn,
   ZoomOut,
   Maximize,
+  ChevronDown,
 } from 'lucide-react'
 import { useStoryMapStore } from '../../store/useStoryMapStore'
 import { UserMenu } from '../Auth/UserMenu'
 import { Button } from '../shared/Button'
+import { exportToJira } from '../../lib/exporters/jira'
+import { exportToADO } from '../../lib/exporters/ado'
+import { downloadFile } from '../../lib/exporters/csv'
 
 interface ToolbarProps {
   onManageReleases: () => void
@@ -24,17 +28,37 @@ export function Toolbar({ onManageReleases, zoom, onZoomIn, onZoomOut, onFitToSc
   const map = getCurrentMap()
   const [editingName, setEditingName] = useState(false)
   const [name, setName] = useState(map?.name || '')
+  const [exportOpen, setExportOpen] = useState(false)
+  const exportRef = useRef<HTMLDivElement>(null)
 
-  const handleExport = () => {
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (exportRef.current && !exportRef.current.contains(e.target as Node)) {
+        setExportOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  const handleExportJson = () => {
     if (!map) return
     const data = JSON.stringify(map, null, 2)
-    const blob = new Blob([data], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `${map.name.replace(/\s+/g, '_').toLowerCase()}.json`
-    a.click()
-    URL.revokeObjectURL(url)
+    const filename = `${map.name.replace(/\s+/g, '_').toLowerCase()}.json`
+    downloadFile(data, filename, 'application/json')
+    setExportOpen(false)
+  }
+
+  const handleExportJira = () => {
+    if (!map) return
+    exportToJira(map)
+    setExportOpen(false)
+  }
+
+  const handleExportADO = () => {
+    if (!map) return
+    exportToADO(map)
+    setExportOpen(false)
   }
 
   return (
@@ -83,9 +107,37 @@ export function Toolbar({ onManageReleases, zoom, onZoomIn, onZoomOut, onFitToSc
         <Tag size={14} /> Releases
       </Button>
 
-      <Button size="sm" variant="ghost" onClick={handleExport}>
-        <Download size={14} /> Export
-      </Button>
+      {/* Export dropdown */}
+      <div ref={exportRef} className="relative">
+        <Button size="sm" variant="ghost" onClick={() => setExportOpen(!exportOpen)}>
+          <Download size={14} /> Export <ChevronDown size={12} />
+        </Button>
+        {exportOpen && (
+          <div className="absolute right-0 mt-1 w-52 bg-gray-800 rounded-lg shadow-lg border border-gray-700 py-1 z-50">
+            <button
+              onClick={handleExportJson}
+              className="flex flex-col w-full px-4 py-2 text-left hover:bg-gray-700"
+            >
+              <span className="text-sm text-gray-200">JSON</span>
+              <span className="text-xs text-gray-500">Full map data, re-importable</span>
+            </button>
+            <button
+              onClick={handleExportJira}
+              className="flex flex-col w-full px-4 py-2 text-left hover:bg-gray-700"
+            >
+              <span className="text-sm text-gray-200">Jira CSV</span>
+              <span className="text-xs text-gray-500">Epics, Stories, Sub-tasks</span>
+            </button>
+            <button
+              onClick={handleExportADO}
+              className="flex flex-col w-full px-4 py-2 text-left hover:bg-gray-700"
+            >
+              <span className="text-sm text-gray-200">Azure DevOps CSV</span>
+              <span className="text-xs text-gray-500">Epics, Features, User Stories</span>
+            </button>
+          </div>
+        )}
+      </div>
 
       <div className="flex items-center gap-1 border-l border-gray-700 pl-3 ml-1">
         <button

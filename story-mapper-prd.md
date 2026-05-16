@@ -6,33 +6,38 @@ Story mapping is one of the most effective techniques in product management for 
 
 The problem is with the tooling. Existing options fall into two categories:
 
-1. **Enterprise story mapping platforms** (Avion, StoriesOnBoard, Easy Agile, etc.) — these are feature-rich but come with subscription costs that are difficult to justify for individual PMs, small teams, or discovery-phase work where you don't yet know if the project will proceed. They also tend to bundle in backlog management, sprint planning, and collaboration features that add complexity without adding value when you just need to map requirements.
+1. **Enterprise story mapping platforms** (Avion, StoriesOnBoard, Easy Agile, etc.) — feature-rich but carry subscription costs that are hard to justify for individual PMs, small teams, or discovery-phase work where you don't yet know if the project will proceed. They also bundle backlog management, sprint planning, and collaboration features that add complexity without adding value when you just need to map requirements.
 
-2. **Generic whiteboard tools** (Miro templates, Lucid sticky notes, FigJam) — these are cheap or free, but they have no underlying data model. A story map in Miro is just rectangles on a canvas. You can't export the hierarchy, you can't validate it, and you can't feed it into downstream tools without manually transcribing everything.
+2. **Generic whiteboard tools** (Miro templates, Lucid sticky notes, FigJam) — cheap or free, but with no underlying data model. A story map in Miro is just rectangles on a canvas. You can't export the hierarchy, validate it, or feed it into downstream tools without manually transcribing everything.
 
-The gap is a tool that provides genuine structure — a real Feature → Epic → Story hierarchy with release slicing — without the overhead of an enterprise platform. Something that makes it fast to capture requirements during discovery and then produce a structured output (JSON) that can be consumed by LLM-assisted workflows to generate tickets in Jira, Azure DevOps, or similar delivery tools.
+The gap is a tool that provides genuine structure — a real Feature → Epic → Story hierarchy with release slicing — without the overhead of an enterprise platform, and **without requiring any backend account or hosted service**. A real-world constraint motivated this: a tool whose data lives only in a hosted database is unusable on a locked-down corporate machine where external cloud services are blocked, and the data isn't portable between environments. StoryMapper must work entirely offline by default, store each map as a portable file, and still produce structured output (JSON, plus Jira/Azure DevOps CSV) that downstream delivery tools or LLM-assisted workflows can consume.
 
 ---
 
 ## Outcome Requirements
 
-These are the outcomes that StoryMapper is designed to achieve. They informed every design and scoping decision in this document.
+These are the outcomes StoryMapper is designed to achieve. They informed every design and scoping decision in this document.
 
 | # | Outcome | Success Measure |
 |---|---------|-----------------|
 | O1 | A PM can capture a complete requirements hierarchy in a single working session | A new story map with Features, Epics, Stories, and release assignments can be created from scratch in under 30 minutes |
 | O2 | The hierarchy is structured, not freeform | Every item belongs to a typed level (Feature → Epic → Story) with enforced parent-child relationships and ordering |
 | O3 | Requirements can be sliced by release to communicate delivery sequencing | Stories are assignable to named, ordered releases with visual dividers on the board |
-| O4 | The structured output is machine-readable and LLM-friendly | Export produces a JSON file preserving the full hierarchy, descriptions, acceptance criteria, and release assignments — ready for ingestion by AI tools or import scripts |
-| O5 | The tool runs at zero or near-zero ongoing cost | Architecture uses only free-tier services (Supabase free tier, Vercel hobby plan) with no per-seat or subscription fees |
-| O6 | Interaction is fast enough that the tool doesn't slow down thinking | Drag-and-drop, card editing, and navigation feel instant through optimistic updates; no loading spinners during normal use |
-| O7 | Data is private and isolated per user | Row-level security ensures users can only access their own maps, with no shared or collaborative access |
+| O4 | The structured output is machine-readable and tool-ready | Export produces a JSON file preserving the full hierarchy, plus Jira and Azure DevOps CSV exports for direct import into those tools |
+| O5 | The tool runs at zero ongoing cost and with no account | The default mode requires no server, no database, no sign-up, and no environment variables — it runs entirely in the browser |
+| O6 | It works in restricted environments and is fully portable | Runs offline with no external network calls in the default mode; each map exports/imports as a single self-contained JSON file |
+| O7 | Interaction is fast enough that the tool doesn't slow down thinking | Drag-and-drop, card editing, and navigation feel instant through optimistic updates; no loading spinners during normal use |
+| O8 | Data is private by default, with an optional path to multi-device sync | Default storage is browser-sandboxed and never leaves the machine; an optional Supabase backend adds authenticated, row-level-isolated cloud sync without changing the app's data model |
 
 ---
 
 ## Solution Overview
 
-StoryMapper is a single-page React application that provides a visual board for organising work into a three-level hierarchy (Features, Epics, Stories) with horizontal release slicing, drag-and-drop interaction, and card-based editing. It is deployed as a static site on Vercel, with Supabase for authentication (GitHub OAuth) and data persistence.
+StoryMapper is a single-page React application that provides a visual board for organising work into a three-level hierarchy (Features → Epics → Stories) with horizontal release slicing, drag-and-drop interaction, and card-based editing.
+
+It is **local-first**. By default all data persists to the browser's IndexedDB — no account, no server, no network. Maps are exported and re-imported as JSON files for backup, sharing, and portability, and exported as CSV for Jira or Azure DevOps.
+
+An optional Supabase backend can be enabled by setting environment variables, providing authenticated cloud sync and multi-device access. The persistence layer is abstracted behind a `StorageAdapter` interface, so the cloud backend is genuinely optional and a custom backend can be added without touching the rest of the app. The app deploys as a static site (Vercel or any static host).
 
 ---
 
@@ -41,106 +46,45 @@ StoryMapper is a single-page React application that provides a visual board for 
 - **Framework:** React 19 with TypeScript
 - **Build Tool:** Vite
 - **Styling:** Tailwind CSS v4 (CSS-first configuration, `@import "tailwindcss"` in index.css, `@tailwindcss/vite` plugin)
-- **Drag and Drop:** @dnd-kit/core + @dnd-kit/sortable
-- **State Management:** Zustand
-- **Validation:** Zod (import file validation)
-- **Authentication:** Supabase Auth with GitHub OAuth provider
-- **Database:** Supabase (PostgreSQL)
-- **Persistence:** Supabase database as primary store, with JSON import/export for portability
-- **Deployment:** Vercel (static site)
+- **Drag and Drop:** @dnd-kit/core + @dnd-kit/sortable + @dnd-kit/utilities
+- **State Management:** Zustand (single store, optimistic updates)
+- **Validation:** Zod (JSON import validation)
+- **Local Storage (default):** Browser IndexedDB — no library, no server
+- **Cloud Storage (optional):** Supabase (PostgreSQL with Row Level Security)
+- **Authentication (optional, cloud mode only):** Supabase Auth with GitHub OAuth
+- **Deployment:** Vercel (static site) or any static host
 - **Icons:** Lucide React
-- **Testing:** Vitest (111 regression tests across 4 test files)
-- **IDs:** Generated by Supabase (UUIDs via `gen_random_uuid()`)
+- **Testing:** Vitest (171 tests across 5 test files)
+- **IDs:** Client-generated UUIDs via `crypto.randomUUID()`
 
-Single-user per account. No shared/collaborative features. Supabase free tier is sufficient.
+Single-user per browser (default) or per account (optional cloud mode). No shared/collaborative features.
+
+---
+
+## Storage Architecture
+
+### Storage Adapter Pattern
+
+Persistence is abstracted behind a `StorageAdapter` interface (`src/lib/adapters/StorageAdapter.ts`). The store never talks to a backend directly; it talks to whichever adapter `createAdapter()` resolves at runtime:
+
+- **`LocalStorageAdapter`** (default) — backed by IndexedDB (`src/lib/storage/IndexedDB.ts`). Each story map is stored as a single denormalised record keyed by its UUID, so startup is one read and each mutation is one write. Writes are debounced at 300ms.
+- **`SupabaseAdapter`** (optional) — backed by Supabase PostgreSQL. Activated only when `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are set. The Supabase SDK is loaded via dynamic import, so in the default build it is not bundled and the app makes zero network requests.
+
+`createAdapter()` (`src/lib/adapters/index.ts`) inspects environment variables and returns the appropriate adapter. To add a custom backend (Firebase, a REST API, etc.), implement `StorageAdapter` and extend the factory.
+
+### Data Flow
+
+The Zustand store (`src/store/useStoryMapStore.ts`) is the single source of truth. Every mutation follows the optimistic update pattern:
+
+1. Update Zustand state immediately (UI reflects the change instantly).
+2. Sync to the active storage adapter in the background.
+3. On failure, roll back state and surface the error via a toast.
 
 ---
 
 ## Data Model
 
-### Database Schema (Supabase / PostgreSQL)
-
-The data model is relational, with each entity in its own table. All tables include a `user_id` column referencing `auth.users(id)` and are protected by Row Level Security (RLS) policies so users can only access their own data.
-
-```sql
--- Story Maps
-create table story_maps (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid references auth.users(id) on delete cascade not null,
-  name text not null default 'Untitled Map',
-  created_at timestamptz default now(),
-  updated_at timestamptz default now()
-);
-
--- Features
-create table features (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid references auth.users(id) on delete cascade not null,
-  story_map_id uuid references story_maps(id) on delete cascade not null,
-  title text not null default 'New Feature',
-  description text default '',
-  acceptance_criteria text default '',
-  "order" integer not null default 0
-);
-
--- Epics
-create table epics (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid references auth.users(id) on delete cascade not null,
-  feature_id uuid references features(id) on delete cascade not null,
-  title text not null default 'New Epic',
-  description text default '',
-  acceptance_criteria text default '',
-  "order" integer not null default 0
-);
-
--- Stories
-create table stories (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid references auth.users(id) on delete cascade not null,
-  epic_id uuid references epics(id) on delete cascade not null,
-  release_id uuid references releases(id) on delete set null,
-  title text not null default 'New Story',
-  description text default '',
-  acceptance_criteria text default '',
-  "order" integer not null default 0
-);
-
--- Releases
-create table releases (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid references auth.users(id) on delete cascade not null,
-  story_map_id uuid references story_maps(id) on delete cascade not null,
-  name text not null default 'New Release',
-  "order" integer not null default 0,
-  colour text not null default '#6366F1'
-);
-```
-
-### Row Level Security (RLS)
-
-Enable RLS on all tables. Each table gets the same policy pattern:
-
-```sql
--- Example for story_maps (repeat for all tables)
-alter table story_maps enable row level security;
-
-create policy "Users can view their own story maps"
-  on story_maps for select using (auth.uid() = user_id);
-
-create policy "Users can insert their own story maps"
-  on story_maps for insert with check (auth.uid() = user_id);
-
-create policy "Users can update their own story maps"
-  on story_maps for update using (auth.uid() = user_id);
-
-create policy "Users can delete their own story maps"
-  on story_maps for delete using (auth.uid() = user_id);
-```
-
-### TypeScript Types (Frontend)
-
-These types mirror the database schema and are used in the Zustand store and React components:
+The canonical model is the set of TypeScript interfaces in `src/types/index.ts`. All IDs are generated client-side with `crypto.randomUUID()` and are stable across export/import-into-the-same-store boundaries (import always re-generates IDs to avoid collisions). The `user_id` field is set to the literal `'local'` in local mode and to the authenticated user's id in cloud mode.
 
 ```typescript
 interface StoryMap {
@@ -204,6 +148,10 @@ interface Release {
 - Releases slice horizontally across ALL Epic columns. Stories are assigned to a Release (or unassigned).
 - Each card type (Feature, Epic, Story) shares the same three editable fields: title, description, acceptance criteria.
 
+### Optional Cloud Schema
+
+In cloud mode the same model is stored relationally in Supabase. The complete schema — five data tables plus the invite-only access tables, all with Row Level Security enforcing `auth.uid() = user_id`, foreign-key cascades, and a hex-colour check constraint — ships as a single runnable script at [`supabase/schema.sql`](supabase/schema.sql). It is not needed for the default local mode.
+
 ---
 
 ## Visual Layout
@@ -240,44 +188,40 @@ The board reads left-to-right and top-to-bottom:
 
 ## Card Design
 
-All three card types are visually distinct from each other through colour, size, and typography.
+All three card types are visually distinct through colour, size, and typography.
 
 ### Feature Cards
 
-- **Background:** Deep indigo/navy (e.g. `#312E81` or similar dark, authoritative colour)
+- **Background:** Deep indigo (`#312E81`)
 - **Text:** White
 - **Size:** Spans the full width of all child Epic columns beneath it
-- **Border:** None, or subtle darker border
 - **Typography:** Bold, larger font size (16px+)
 - **Content shown:** Title only (single line, truncated with ellipsis)
-- **Left accent:** None (the full card background provides distinction)
 
 ### Epic Cards
 
-- **Background:** Medium blue/teal (e.g. `#0891B2` or similar mid-tone colour)
+- **Background:** Teal (`#0891B2`)
 - **Text:** White
 - **Size:** Fixed column width (~220px), moderate height
-- **Border:** None, or subtle darker border
 - **Typography:** Semi-bold, medium font size (14px)
 - **Content shown:** Title (up to 2 lines, truncated with ellipsis)
-- **Left accent:** None
 
 ### Story Cards
 
-- **Background:** Dark grey (`bg-gray-800`) — matches the app's dark theme for visual consistency
+- **Background:** Dark grey (`bg-gray-800`)
 - **Text:** Light grey (`text-gray-200`)
 - **Size:** Fixed column width (~220px), compact height
-- **Border:** 1px solid dark grey (`border-gray-700`), with subtle left-side colour accent matching the parent Release colour
+- **Border:** 1px solid dark grey (`border-gray-700`)
 - **Typography:** Regular weight, smaller font size (13px)
-- **Content shown:** Title (up to 2 lines) + first line of description (truncated, muted colour)
-- **Left accent:** 4px left border in the Release colour (or neutral grey if unassigned)
+- **Content shown:** Title (up to 2 lines) + first line of description (truncated, muted)
+- **Left accent:** 4px left border in the assigned Release colour (neutral grey if unassigned)
 
 ### General Card Behaviour
 
-- All cards have `border-radius: 8px`, subtle box shadow on hover
+- All cards have `border-radius: 8px` and a subtle box shadow on hover
 - Cursor changes to grab/move on hover over the card body
-- A small drag handle icon (grip dots) appears in the top-right corner on hover
-- Cards have a brief scale-up transition on hover (e.g. `transform: scale(1.02)`)
+- A small drag handle (grip dots) appears in the top-right corner on hover
+- Brief scale-up transition on hover (e.g. `transform: scale(1.02)`)
 - While dragging, the card becomes semi-transparent with a more prominent shadow
 
 ---
@@ -289,67 +233,59 @@ All three card types are visually distinct from each other through colour, size,
 Clicking any card opens a modal dialogue with:
 
 1. **Title** (text input, single line, required, auto-focused on open)
-2. **Description** (textarea, multi-line, supports plain text, optional)
-3. **Acceptance Criteria** (textarea, multi-line, supports plain text, optional)
+2. **Description** (textarea, multi-line, plain text, optional)
+3. **Acceptance Criteria** (textarea, multi-line, plain text, optional)
 
 Modal behaviour:
 
-- Opens centred on screen with a semi-transparent backdrop
-- Closes on backdrop click, Escape key, or explicit close button (X)
-- Changes save automatically when the modal is closed (no explicit save button needed). Closing the modal — via backdrop click, Escape, or X — triggers a save of all fields
-- Modal header shows the card type as a coloured badge (e.g. "Feature", "Epic", "Story")
-- A delete button is available in the modal footer, with a confirmation step ("Are you sure? This will also delete all child items.")
-- If the card is a Story, a dropdown in the modal allows assigning/changing the Release
+- Opens centred with a semi-transparent backdrop
+- Closes on backdrop click, Escape key, or the close button (X)
+- Changes save automatically on close (no explicit save button)
+- Header shows the card type as a coloured badge ("Feature", "Epic", "Story")
+- A delete button in the footer with a confirmation step ("This will also delete all child items.")
+- For a Story, a dropdown allows assigning/changing the Release
 
 ### Drag and Drop
-
-The following drag-and-drop operations must be supported:
 
 | Dragged Item | Valid Drop Targets | Behaviour |
 |---|---|---|
 | Feature | Before/after another Feature | Reorders Features horizontally |
-| Epic | Before/after another Epic (within same Feature or different Feature) | Reorders Epics. Moving to a different Feature re-parents the Epic and all its child Stories |
-| Story | Before/after another Story (within same Epic column and release section, or different Epic/release) | Reorders Stories. Dropping into a different release section changes the Story's releaseId. Dropping under a different Epic re-parents the Story |
+| Epic | Before/after another Epic (same or different Feature) | Reorders Epics. Moving to a different Feature re-parents the Epic and all its child Stories |
+| Story | Before/after another Story (same or different Epic/release section) | Reorders Stories. Dropping into a different release section changes the Story's `release_id`. Dropping under a different Epic re-parents the Story |
 
 #### Promotion: Story to Epic
 
-- When a Story card is dragged and dropped into the **Epic row** (the row containing Epic cards), it is promoted to an Epic.
+- Dragging a Story into the Epic row promotes it to an Epic.
 - The Story's title, description, and acceptance criteria transfer to the new Epic.
-- The new Epic is created with zero child Stories.
-- The original Story is removed from its previous Epic.
+- The new Epic is created with zero child Stories; the original Story is removed.
 
 #### Moving an Epic moves its Stories
 
-- When an Epic is dragged to a new position (within the same Feature or to a different Feature), all of its child Stories move with it. The Stories maintain their order and release assignments.
+- When an Epic is moved (within or across Features), all child Stories move with it, retaining their order and release assignments.
 
 #### Visual Feedback During Drag
 
-- Drop targets are highlighted with coloured rings: indigo for Features, cyan for Epics, blue for story release sections, teal for the Epic promotion zone.
+- Drop targets are highlighted with coloured rings: indigo (Features), cyan (Epics), blue (story release sections), teal (Epic promotion zone).
 - Invalid drop zones show no indicator.
-- A ghost card (DragOverlay) follows the cursor at reduced opacity, styled to match the card type being dragged.
+- A ghost card (DragOverlay) follows the cursor at reduced opacity, styled to match the dragged card type, rendered outside the zoom transform so it tracks the cursor 1:1.
 
 ### Adding New Items
 
-- **Add Feature:** A "+ Add Feature" button at the far right of the Feature row. Creates a new Feature with a default title ("New Feature") and immediately opens the modal for editing.
-- **Add Epic:** A "+ Add Epic" button at the right end of each Feature's Epic row. Creates a new Epic under that Feature with default title ("New Epic") and opens the modal.
-- **Add Story:** A "+ Add Story" button at the bottom of each Epic column (within each release section, or at the very bottom if no releases exist). Creates a new Story under that Epic, optionally in the relevant release, with default title ("New Story") and opens the modal.
+- **Add Feature:** "+ Add Feature" button at the far right of the Feature row.
+- **Add Epic:** "+ Add Epic" button at the right end of each Feature's Epic row.
+- **Add Story:** "+ Add Story" button at the bottom of each Epic column (within each release section, or at the bottom if no releases exist).
+
+Each creates an item with a default title and opens the modal for editing.
 
 ### Release Management
 
-A "Manage Releases" button in the toolbar opens a side panel or modal where the user can:
+A "Manage Releases" control in the toolbar opens a side panel where the user can:
 
-- Add a new release (name + colour picker)
-- Rename existing releases
-- Reorder releases (drag to reorder vertically; top = highest priority)
-- Delete a release (Stories in that release become unassigned)
-- Each release has a default colour from a preset palette, which can be customised
+- Add a release (name + colour from a preset palette, customisable)
+- Rename and reorder releases (drag to reorder; top = highest priority)
+- Delete a release (its Stories become unassigned, not deleted)
 
-Release dividers on the board:
-
-- Rendered as dashed horizontal lines spanning the full width of the story area
-- Labelled with the release name on the left side
-- The line colour matches the release colour
-- Releases are always shown in order, with an "Unassigned" section at the bottom
+Release dividers on the board are dashed horizontal lines spanning the story area, labelled with the release name, coloured to match the release, always shown in order with an "Unassigned" section at the bottom.
 
 ---
 
@@ -357,165 +293,130 @@ Release dividers on the board:
 
 ### Home Screen
 
-When no map is open, show a simple home/landing screen:
+When no map is open:
 
 - List of saved story maps (name + last modified date)
 - "Create New Map" button
-- Each map has a context menu (three-dot icon on hover) with rename, duplicate, and delete options
-- Rename opens a styled prompt dialog pre-filled with the current name
-- Delete opens a styled confirmation dialog with the map name and a danger-styled confirm button
+- "Import" button — uploads a previously exported JSON file (Zod-validated) and creates a new map from it
+- Per-map context menu (three-dot on hover): rename, duplicate, delete
+- Rename uses a styled prompt dialog; delete uses a styled danger confirmation dialog
 - Click a map to open it
 
 ### Toolbar (When a Map is Open)
 
-A persistent toolbar at the top of the board with:
-
-- **Map name** (editable inline, click to edit)
-- **Back to Home** button (left arrow or home icon)
+- **Map name** (editable inline)
+- **Back to Home** button
 - **Manage Releases** button
-- **Export** button (downloads the full StoryMap as a JSON file)
-- **Import** button (uploads a JSON file and loads it as a new map, with validation)
-- **Zoom controls** (zoom in, zoom out, fit to screen) using CSS transform on the board container
-
----
-
-## Authentication
-
-### GitHub OAuth via Supabase
-
-The application uses Supabase Auth with GitHub as the sole OAuth provider. This keeps authentication simple and free.
-
-#### Login Flow
-
-1. User visits the app and sees a landing/login page.
-2. User clicks "Sign in with GitHub".
-3. Supabase handles the OAuth redirect to GitHub and back.
-4. On successful auth, the user is redirected to the Home Screen showing their story maps.
-5. The Supabase session is stored in the browser automatically by `@supabase/supabase-js`.
-
-#### Auth UI
-
-- **Logged out:** Show a simple landing page with the app name, a brief tagline ("Lightweight story mapping for agile teams"), and a single "Sign in with GitHub" button. No other sign-up or login options.
-- **Logged in:** Show the user's GitHub avatar and display name in the top-right corner of the toolbar, with a "Sign out" option in a dropdown menu.
-- **Session expiry:** If the session expires or the user is not authenticated, redirect to the login page. Supabase handles token refresh automatically.
-
-#### Route Protection
-
-All routes except the login page are protected. If a user navigates to any app route without a valid session, they are redirected to the login page. Use a simple `AuthProvider` context wrapper that checks `supabase.auth.getSession()` on mount and listens for `onAuthStateChange` events.
-
-### Supabase Configuration
-
-The app requires two environment variables (set in Vercel's project settings), plus an optional dev bypass:
-
-```
-VITE_SUPABASE_URL=https://uouzmpqtinjxywasgopk.supabase.co
-VITE_SUPABASE_ANON_KEY=your-anon-key
-VITE_DEV_BYPASS_AUTH=true   # Optional: enables mockSupabase for local dev without GitHub OAuth
-```
-
-The Supabase client singleton (`src/lib/supabase.ts`) supports a dev auth bypass mode. When `VITE_DEV_BYPASS_AUTH=true` is set **and** the build is a dev build (`import.meta.env.DEV`), a mock Supabase client (`src/lib/mockSupabase.ts`) is used instead. This is safe because `import.meta.env.DEV` is statically replaced with `false` during production builds, making the mock path dead-code-eliminated.
-
-### Supabase Setup Steps (Manual, before deployment)
-
-The developer must complete these steps in the Supabase dashboard before the app will function:
-
-1. Create a new Supabase project.
-2. In Authentication > Providers, enable GitHub and configure the OAuth app (Client ID and Client Secret from GitHub's Developer Settings).
-3. Set the Site URL and Redirect URL to the Vercel deployment URL (e.g. `https://storymapper.vercel.app`).
-4. Run the SQL schema (from the Data Model section above) in the SQL Editor to create tables.
-5. Enable RLS on all tables and create the policies (from the Data Model section above).
-6. Copy the project URL and anon key into the Vercel environment variables.
+- **Export** dropdown — JSON (full, re-importable), Jira CSV, Azure DevOps CSV
+- **Zoom controls** (in, out, fit to screen) via CSS transform on the board container
+- **Cloud mode only:** user avatar + sign-out menu; "Manage Access" for admins
 
 ---
 
 ## Persistence
 
-### Primary Store: Supabase
+### Default: Local (IndexedDB)
 
-- All data is persisted to Supabase PostgreSQL tables via the `@supabase/supabase-js` client library.
-- The Zustand store manages in-memory state and syncs changes to Supabase.
-- On app load (after authentication), the store fetches the user's story maps and hydrates state.
-- Individual mutations (add, edit, delete, reorder) are written to Supabase immediately. Use the Supabase client's `.insert()`, `.update()`, `.delete()`, and `.upsert()` methods.
-- Bulk reorder operations (e.g. after drag-and-drop) are debounced at 300ms using a per-table timeout map (keyed by table name: `features`, `epics`, `stories`, `releases`) so that concurrent reorders across different tables do not cancel each other.
+- All data persists to the browser's IndexedDB via `LocalStorageAdapter`.
+- Each map is one denormalised record; one read on startup, one debounced write (300ms) per mutation.
+- Data is sandboxed by the browser's same-origin policy and never leaves the machine.
+- No environment variables, accounts, or network connectivity required. The app is fully functional offline.
 
-### Optimistic Updates
+### Optional: Cloud (Supabase)
 
-- The UI should update immediately on user action (optimistic update in Zustand).
-- The Supabase write happens in the background.
-- If the write fails, revert the optimistic update and show a toast error notification.
-- This keeps the UI feeling snappy despite the network round-trip.
+- Enabled by setting `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`.
+- `SupabaseAdapter` writes each mutation to PostgreSQL; bulk reorder writes are debounced at 300ms with a per-table timeout map (`features`, `epics`, `stories`, `releases`) so concurrent reorders across tables don't cancel each other.
+- All access is governed by Row Level Security (`auth.uid() = user_id`), not application-level checks.
+- The Supabase SDK is dynamically imported, so enabling cloud mode is the only thing that pulls it into the bundle.
 
-### Loading States
+### Optimistic Updates & Loading
 
-- Show a skeleton/loading state while the initial data fetch is in progress.
-- Individual card saves should not show loading indicators (optimistic updates handle this).
-- If the network is unavailable, show a subtle "offline" indicator in the toolbar. The app will not function offline; it requires Supabase connectivity.
+- The UI updates immediately; the adapter write happens in the background.
+- On failure, the optimistic change is rolled back and a toast error is shown.
+- A skeleton/loading state covers only the initial hydration. Individual card saves show no spinner.
 
-### Export/Import (JSON)
+### Export / Import
 
-- **Export** downloads the user's complete story map data as a JSON file. The export fetches all related data (features, epics, stories, releases) for the selected map and serialises it.
-- **Import** uploads a JSON file, validates it against a Zod schema (`src/schemas/importSchema.ts`) that enforces types, size limits (100 features, 50 epics/feature, 200 stories/epic), hex colour format, and applies defaults for optional fields. On validation failure, the first Zod error path is surfaced in the toast (e.g. "Invalid import: features.0.title - Expected string"). Valid data is inserted into Supabase as a new story map with new UUIDs (to avoid ID conflicts). The `user_id` on all imported records is set to the currently authenticated user.
+- **JSON export** serialises the selected map (features, epics, stories, releases) to a single downloadable file, re-importable into StoryMapper.
+- **Jira CSV** maps Feature → Epic, Epic → Story, Story → Sub-task.
+- **Azure DevOps CSV** maps Feature → Epic, Epic → Feature, Story → User Story, using hierarchical Title columns.
+- **JSON import** validates against `src/schemas/importSchema.ts` (Zod): max 100 features, 50 epics/feature, 200 stories/epic; title ≤ 500, description/acceptance ≤ 10,000, map/release name ≤ 200 chars; release colour must match `^#[0-9a-fA-F]{6}$`. On failure the first Zod error path is surfaced in a toast and nothing is written. Valid data is assigned fresh UUIDs.
+
+---
+
+## Authentication (Cloud Mode Only)
+
+In the default local mode there is **no authentication** — the app opens straight to the Home Screen and a fake `'local'` user is used internally.
+
+When a Supabase backend is configured, StoryMapper uses Supabase Auth with GitHub as the sole OAuth provider, plus an invite-only access model:
+
+1. User clicks "Sign in with GitHub"; Supabase handles the OAuth redirect (redirect URL scoped to `window.location.origin`).
+2. On success, the app checks the `allowed_users` table for the user's email.
+3. If absent, the user sees an access-request form instead of the app.
+4. An admin (any user already on the allowlist) approves or denies requests from the "Manage Access" panel.
+5. All data is scoped per user by RLS.
+
+`AuthProvider` selects a local (no-op) provider or the Supabase provider based on the same environment-variable check used by the storage factory. Environment variables (cloud mode only):
+
+```
+VITE_SUPABASE_URL=https://<your-project>.supabase.co
+VITE_SUPABASE_ANON_KEY=<your-anon-key>
+```
+
+The first admin is seeded by hand (`insert into public.allowed_users (email) values ('you@example.com');`) as documented at the end of `supabase/schema.sql`.
 
 ---
 
 ## Non-Functional Requirements
 
-### Performance (supports O6)
+### Performance (supports O7)
 
 - The board must remain responsive with up to 10 Features, 50 Epics, and 200 Stories.
 - Drag-and-drop must feel smooth at 60fps.
-- All mutations use optimistic updates — the UI reflects the change immediately while the database write happens in the background.
-- Bulk reorder writes (after drag-and-drop) are debounced at 300ms and batched into a single Supabase call per table.
+- All mutations use optimistic updates; bulk reorder writes are debounced at 300ms.
 
-### Security & Data Isolation (supports O7)
+### Privacy & Data Isolation (supports O8)
 
-- All database tables enforce Row Level Security (RLS) scoped to `user_id = auth.uid()`.
-- Authentication is handled entirely by Supabase Auth with GitHub OAuth. No passwords are stored or managed by the application.
-- The Supabase anon key is the only credential exposed to the client. All data access is governed by RLS policies, not application-level checks.
-- Imported JSON files are validated against a Zod schema before any database writes. Malformed or oversized imports are rejected with a descriptive error.
+- **Local mode:** data is browser-sandboxed (same-origin policy); nothing leaves the machine; no credentials exist.
+- **Cloud mode:** all tables enforce RLS scoped to `auth.uid() = user_id`; the only client credential is the public Supabase anon key, which cannot bypass RLS.
+- Imported JSON is Zod-validated before any write; malformed or oversized imports are rejected with a descriptive error.
 
 ### Cost (supports O5)
 
-- The architecture must remain viable on free-tier infrastructure: Supabase free plan (500MB database, 50k monthly active users) and Vercel hobby plan.
-- No per-seat licensing, no usage-based billing, no third-party SaaS dependencies beyond Supabase and Vercel.
-- Single-user per account. No shared or collaborative features that would require connection pooling, presence, or conflict resolution.
+- Default mode has zero infrastructure cost: no server, no database, no third-party SaaS.
+- Optional cloud mode is viable on free-tier Supabase + Vercel hobby. No per-seat or usage-based billing.
 
 ### Accessibility
 
-- All interactive elements must be keyboard-navigable.
-- Modal focus trapping (Tab cycles within the modal while open).
+- All interactive elements keyboard-navigable; modal focus trapping (Tab cycles within the open modal).
 - ARIA labels on drag-and-drop elements.
-- Sufficient colour contrast on all card types (WCAG AA minimum).
+- WCAG AA colour contrast minimum on all card types.
 
 ### Browser Support
 
-- Latest versions of Chrome, Firefox, Safari, Edge.
-- No IE11 support required.
+- Latest Chrome, Firefox, Safari, Edge. No IE11.
 
 ### Responsive Behaviour
 
-- The board is designed for desktop use (1280px+ viewport).
-- The board is horizontally scrollable when content overflows.
+- Designed for desktop (1280px+); board is horizontally scrollable on overflow.
 - On smaller screens, a warning indicates the tool is best used on desktop.
 
 ---
 
 ## Out of Scope (Explicitly Not Building)
 
-The following are intentionally excluded to keep the tool focused:
-
 - Multi-user collaboration or shared maps
 - Real-time sync or conflict resolution
-- Integrations with Jira, Azure DevOps, or other tools
 - Estimation, story points, or velocity tracking
 - Sprint planning or sprint boards
 - Comments, attachments, or activity logs
 - Custom card fields beyond title, description, and acceptance criteria
 - Markdown or rich text editing in card fields
-- Offline mode or local caching (the app requires an internet connection)
-- Additional OAuth providers beyond GitHub
+- Additional OAuth providers beyond GitHub (cloud mode)
 - Undo/redo functionality (consider for v2)
 - Keyboard shortcuts for board navigation (consider for v2)
+
+> Note: Jira/Azure DevOps export and full offline operation, previously out of scope, are now core capabilities.
 
 ---
 
@@ -527,54 +428,69 @@ story-mapper/
 ├── src/
 │   ├── components/
 │   │   ├── Auth/
-│   │   │   ├── AuthProvider.tsx        # Auth context, session management, route protection
-│   │   │   ├── LoginPage.tsx           # Landing page with GitHub OAuth button
-│   │   │   └── UserMenu.tsx            # Avatar + sign out dropdown
+│   │   │   ├── AuthProvider.tsx        # Local or Supabase auth context
+│   │   │   ├── LoginPage.tsx           # GitHub OAuth (cloud mode)
+│   │   │   ├── AccessRequestPage.tsx   # Invite-only request form (cloud mode)
+│   │   │   └── UserMenu.tsx            # Avatar + sign out (cloud mode)
+│   │   ├── Admin/
+│   │   │   └── AdminPanel.tsx          # Approve/deny access requests (cloud mode)
 │   │   ├── Board/
-│   │   │   ├── Board.tsx              # Main board layout
-│   │   │   ├── FeatureRow.tsx         # Feature cards row
-│   │   │   ├── EpicRow.tsx            # Epic cards within a feature
-│   │   │   ├── StoryColumn.tsx        # Stories within an epic, grouped by release
-│   │   │   ├── StoryCell.tsx          # Individual story drop zone within a release section
-│   │   │   └── ReleaseDivider.tsx     # Horizontal release separator
+│   │   │   ├── Board.tsx               # Main board: DndContext, zoom, modals
+│   │   │   ├── EpicRow.tsx             # Epic cards under a feature + promotion zone
+│   │   │   ├── StoryColumn.tsx         # Stories within a feature, grouped by release
+│   │   │   ├── StoryCell.tsx           # One feature+release drop zone
+│   │   │   └── ReleaseDivider.tsx      # Horizontal release separator
 │   │   ├── Cards/
 │   │   │   ├── FeatureCard.tsx
 │   │   │   ├── EpicCard.tsx
 │   │   │   └── StoryCard.tsx
 │   │   ├── Modal/
-│   │   │   ├── CardModal.tsx          # Edit modal for any card type
-│   │   │   └── ReleaseManager.tsx     # Release CRUD panel
+│   │   │   ├── CardModal.tsx           # Edit modal for any card type
+│   │   │   └── ReleaseManager.tsx      # Release CRUD side panel
 │   │   ├── Home/
-│   │   │   └── HomeScreen.tsx         # Map listing and creation
+│   │   │   └── HomeScreen.tsx          # Map listing, creation, JSON import
 │   │   ├── Toolbar/
-│   │   │   └── Toolbar.tsx            # Top bar with controls
-│   │   └── shared/
-│   │       ├── Button.tsx
-│   │       ├── Input.tsx
-│   │       ├── Toast.tsx              # Toast notifications for errors
-│   │       ├── ColourPicker.tsx
-│   │       ├── ConfirmDialog.tsx      # Styled confirmation dialog (replaces native confirm())
-│   │       └── PromptDialog.tsx       # Styled text prompt dialog (replaces native prompt())
-│   ├── schemas/
-│   │   └── importSchema.ts           # Zod schema for JSON import validation
+│   │   │   └── Toolbar.tsx             # Top bar: name, export, zoom, releases
+│   │   ├── shared/
+│   │   │   ├── Button.tsx
+│   │   │   ├── Input.tsx
+│   │   │   ├── Toast.tsx
+│   │   │   ├── ColourPicker.tsx
+│   │   │   ├── ConfirmDialog.tsx
+│   │   │   └── PromptDialog.tsx
+│   │   └── components.test.tsx
 │   ├── lib/
-│   │   ├── supabase.ts               # Supabase client singleton (with dev bypass support)
-│   │   └── mockSupabase.ts           # Mock Supabase client for local dev without auth
+│   │   ├── adapters/
+│   │   │   ├── StorageAdapter.ts       # Persistence interface
+│   │   │   ├── LocalStorageAdapter.ts  # IndexedDB (default)
+│   │   │   ├── SupabaseAdapter.ts      # Supabase (optional)
+│   │   │   └── index.ts                # createAdapter() factory + isLocalMode()
+│   │   ├── storage/
+│   │   │   └── IndexedDB.ts            # Thin IndexedDB wrapper
+│   │   └── exporters/
+│   │       ├── csv.ts                  # Shared CSV helpers
+│   │       ├── jira.ts                 # Jira CSV exporter
+│   │       └── ado.ts                  # Azure DevOps CSV exporter
+│   ├── schemas/
+│   │   ├── importSchema.ts             # Zod schema for JSON import
+│   │   └── importSchema.test.ts
 │   ├── store/
-│   │   └── useStoryMapStore.ts        # Zustand store with Supabase sync
+│   │   ├── useStoryMapStore.ts         # Zustand store (adapter-driven)
+│   │   └── useStoryMapStore.test.ts
 │   ├── types/
-│   │   └── index.ts                   # TypeScript interfaces
+│   │   └── index.ts                    # TypeScript interfaces
 │   ├── utils/
-│   │   ├── dnd.ts                     # Drag and drop collision detection helpers
-│   │   ├── dnd.test.ts                # DnD utility tests (9 tests)
-│   │   ├── colours.ts                 # Colour palette and utilities
-│   │   └── colours.test.ts            # Colour utility tests (6 tests)
+│   │   ├── dnd.ts                      # DnD collision detection
+│   │   ├── dnd.test.ts
+│   │   ├── colours.ts                  # Colour palette and helpers
+│   │   └── colours.test.ts
 │   ├── test/
-│   │   └── setup.ts                   # Vitest test setup
+│   │   └── setup.ts                    # Vitest setup
 │   ├── App.tsx
 │   └── main.tsx
-├── .env.local                          # VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY (not committed)
-├── .env.example                        # Template for env vars
+├── supabase/
+│   └── schema.sql                      # Optional cloud schema + RLS
+├── .env.example                        # Cloud-mode env template
 ├── package.json
 ├── tsconfig.json
 ├── vitest.config.ts
@@ -583,30 +499,21 @@ story-mapper/
 
 ---
 
+## Key Implementation Details
 
-### Key Implementation Details
-
-- Use `@supabase/supabase-js` for all database operations. The Supabase client handles auth token injection automatically.
-- Use `@dnd-kit/core` for the drag-and-drop framework. Use sensors with a minimum drag distance (e.g. 5px) to distinguish clicks from drags.
-- The board should use CSS Grid or a combination of Flexbox containers to achieve the column-based layout.
-- Feature cards should use `grid-column: span N` where N is the number of child Epics.
-- Release dividers need to align across all Epic columns. This is easiest if the story area uses a single CSS Grid where release sections are explicit grid rows.
-- For the Story-to-Epic promotion, detect when a Story is dropped in the Epic row zone using `@dnd-kit`'s droppable areas with a specific `data` attribute.
-- Debounce bulk reorder writes using a per-table 300ms timeout map. Each table (`features`, `epics`, `stories`, `releases`) has an independent timeout so concurrent reorders across tables do not cancel each other.
-- All Supabase operations set `user_id` to the currently authenticated user's ID from `supabase.auth.getUser()`. The `getUserId()` helper returns `null` (with an error toast) instead of throwing on expired sessions, and all callers early-return gracefully.
-- Fetch story map data using Supabase's query builder with nested selects where appropriate (e.g. `supabase.from('story_maps').select('*, features(*, epics(*, stories(*)))')`).
+- The store never imports a backend directly; it depends only on the `StorageAdapter` interface. `createAdapter()` resolves the concrete adapter from environment variables at startup.
+- The Supabase client is loaded via dynamic `import()`, so the default build excludes the SDK entirely and makes no network requests.
+- IndexedDB persistence stores one record per map; the local adapter holds a live reference to the store's maps so it can persist the full map object without a circular dependency.
+- Use `@dnd-kit/core` with a 5px activation distance to distinguish clicks from drags. Sortable transforms are divided by the current zoom factor so cards track the cursor 1:1; the DragOverlay renders outside the zoomed container.
+- Feature cards use `grid-column: span N` (N = child Epic count); the story area uses an aligned grid so release dividers line up across all Epic columns.
+- Story-to-Epic promotion is detected via a dedicated droppable zone (`data` attribute) in the Epic row.
+- In cloud mode, every adapter write sets `user_id` from the authenticated session (`supabase.auth.getUser()`); on an expired session the adapter surfaces an error and the store rolls back.
+- Errors are caught and shown as generic user-facing toast messages — no stack traces or internal state in the UI. Failed optimistic updates roll back and the store re-hydrates from the adapter.
 
 ### Empty States
 
-- No maps yet: "Create your first story map to get started" with a prominent CTA button
-- No Features in a map: "Add your first feature to start mapping" with an arrow pointing to the add button
-- No Epics under a Feature: Show a muted "+ Add Epic" placeholder
-- No Stories under an Epic: Show a muted "+ Add Story" placeholder
-- No Releases defined: Stories are just listed in order with no dividers; a subtle prompt suggests creating releases
-
-### Error Handling
-
-- If a Supabase write fails, revert the optimistic update and show a toast notification with the error
-- If the network is unavailable, show an "offline" indicator and disable editing actions
-- If an imported JSON file is malformed, validate against the Zod import schema and surface the first error path in the toast (e.g. "Invalid import: features.0.title - Expected string"). Do not insert any data on validation failure
-- If authentication fails or the session expires unexpectedly, redirect to the login page with a message
+- No maps yet: "Create your first story map to get started" with a prominent CTA
+- No Features in a map: prompt with an arrow pointing to the add button
+- No Epics under a Feature: muted "+ Add Epic" placeholder
+- No Stories under an Epic: muted "+ Add Story" placeholder
+- No Releases defined: Stories listed in order with no dividers; a subtle prompt suggests creating releases
